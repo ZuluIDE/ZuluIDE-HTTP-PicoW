@@ -8,12 +8,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Checkout pico-sdk
         uses: actions/checkout@v4
-	with:
-	  repository: raspberrypi/pico-sdk
-	  path: pico-sdk
+        with:
+          repository: raspberrypi/pico-sdk
+          path: pico-sdk
+          
       - name: Checkout pico-sdk submodules
-        working-directory: ${{github.workspace}}/pico-sdk
-	run: git submodule update --init
+        working-directory: pico-sdk
+        run: git submodule update --init
+
+      - name: Create build Directory
+        run: cmake -E make_directory build
+        
+      - name: Setup Tools
+        run: |
+           sudo apt update
+           sudo apt install cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential
+           
+      - name: Configure CMake
+        working-directory: ${{github.workspace}}/build
+        env:
+          PICO_SDK_PATH: ${{github.workspace}}/pico-sdk
+        run: cmake ../
+
+      - name: Build
+        working-directory: ${{github.workspace}}/build
+        run: cmake --build .
