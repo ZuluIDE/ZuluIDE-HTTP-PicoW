@@ -1,0 +1,60 @@
+name: Build ZuluIDE-HTTP-PicoW
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Checkout pico-sdk
+        uses: actions/checkout@v4
+        with:
+          repository: raspberrypi/pico-sdk
+          path: pico-sdk
+          
+      - name: Checkout pico-sdk submodules
+        working-directory: pico-sdk
+        run: git submodule update --init
+
+      - name: Create build Directory
+        run: cmake -E make_directory build
+        
+      - name: Setup Tools
+        run: |
+           sudo apt update
+           sudo apt install cmake gcc-arm-none-eabi libnewlib-arm-none-eabi build-essential
+           
+      - name: Configure CMake
+        working-directory: ${{github.workspace}}/build
+        env:
+          PICO_SDK_PATH: ${{github.workspace}}/pico-sdk
+        run: cmake ../
+
+      - name: Build
+        working-directory: ${{github.workspace}}/build
+        run: cmake --build .
+
+      - name: Upload UF2 into build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          path: ${{github.workspace}}/build/zuluide_http_picow.uf2
+          name: ZuluIDE-HTTP-PicoW binary
+
+      - name: Upload to latest release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: github.ref == 'refs/heads/main'
+        run: |         
+          cd build
+          gh release create  --latest --repo ${GITHUB_REPOSITORY} latest zuluide_http_picow.uf2
+
+      - name: Upload to newly created release
+        env: 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          RELEASE=$(basename ${{github.ref}})
+          gh release upload --repo ${GITHUB_REPOSITORY} $RELEASE *
