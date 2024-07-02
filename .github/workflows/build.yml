@@ -42,14 +42,16 @@ jobs:
         with:
           path: ${{github.workspace}}/build/zuluide_http_picow.uf2
           name: ZuluIDE-HTTP-PicoW binary
-
+      - name: Get current date
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
       - name: Upload to latest release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         if: github.ref == 'refs/heads/main'
-        run: |         
+        run: |
           cd build
-          gh release create  --latest --repo ${GITHUB_REPOSITORY} latest zuluide_http_picow.uf2
+          gh release create  --latest --repo ${GITHUB_REPOSITORY} release-${{steps.date.outputs.date}}-${{github.run_attempt}} zuluide_http_picow.uf2
 
       - name: Upload to newly created release
         env: 
