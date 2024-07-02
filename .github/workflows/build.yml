@@ -40,7 +40,7 @@ jobs:
       - name: Upload UF2 into build artifacts
         uses: actions/upload-artifact@v4
         with:
-          path: ${{github.workspace}}/build/*.uf2
+          path: ${{github.workspace}}/build/zuluide_http_picow.uf2
           name: ZuluIDE-HTTP-PicoW binary
 
 
