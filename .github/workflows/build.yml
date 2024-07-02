@@ -36,3 +36,30 @@ jobs:
       - name: Build
         working-directory: ${{github.workspace}}/build
         run: cmake --build .
+
+      - name: Upload UF2 into build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          path: ${{github.workspace}}/build/*.uf2
+          name: ZuluIDE-HTTP-PicoW binary
+
+
+      - name: Upload to latest release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: github.ref == 'refs/heads/main'
+        run: |          
+          git tag -d latest
+          git tag latest
+          git push origin --force latest
+          cd distrib
+          gh api repos/${GITHUB_REPOSITORY}/releases/tags/latest | jq -r '.assets[] | [.url] | @tsv' | xargs -n 1 gh api -X DELETE || true
+          gh release upload --repo ${GITHUB_REPOSITORY} --clobber latest *
+
+      - name: Upload to newly created release
+        env: 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          RELEASE=$(basename ${{github.ref}})
+          gh release upload --repo ${GITHUB_REPOSITORY} $RELEASE *
