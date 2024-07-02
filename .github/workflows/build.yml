@@ -1,0 +1,19 @@
+name: Build ZuluIDE-HTTP-PicoW
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout pico-sdk
+        uses: actions/checkout@v2
+	with:
+	  repository: raspberrypi/pico-sdk
+	  path: pico-sdk
+      - name: Checkout pico-sdk submodules
+        working-directory: ${{github.workspace}}/pico-sdk
+	run: git submodule update --init
