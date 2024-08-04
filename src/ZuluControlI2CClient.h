@@ -40,6 +40,8 @@
 #define I2C_CLIENT_FETCH_SSID 0xE
 #define I2C_CLIENT_FETCH_SSID_PASS 0xF
 #define I2C_CLIENT_FETCH_ITR_IMAGE 0x10
+#define I2C_CLIENT_IP_ADDRESS 0x11
+#define I2C_CLIENT_NET_DOWN 0x12
 
 #include <cstdlib>
 #include <cstdint>

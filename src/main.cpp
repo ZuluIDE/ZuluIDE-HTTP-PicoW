@@ -100,7 +100,7 @@ namespace zuluide::i2c::client {
       } else {
 	// Rebuild the image.
 	RebuildImageJson();
-	
+
 	// All images received.
 	imageState = ImageCacheState::Full;
       }
@@ -121,7 +121,7 @@ namespace zuluide::i2c::client {
     } else {
       printf("No WIFI SSID retrieved from server and none compiled into the application.");
     }
-    
+
     if (wifiSSID.length() > 0) {
       if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID_PASS)) {
 	printf("Failed to add request for SSID password to output queue.");
@@ -150,7 +150,7 @@ namespace zuluide::i2c::client {
       // Put a subscribe message in the queue so when we connect, we immediately subscribe.
       if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_SUBSCRIBE_STATUS_JSON)) {
 	printf("Failed to add subscribe to output queue.");
-      }      
+      }
 
       programState = State::WIFIInit;
     }
@@ -160,7 +160,7 @@ namespace zuluide::i2c::client {
      When the I2C server is started it can send a reset request (probably should). When this
      client receives the reset, it should reset because it may have old data.
    */
-  void ProcessReset() {    
+  void ProcessReset() {
     printf("Reset Received.\n");
     watchdog_reboot (0, 0, 1000);
   }
@@ -188,7 +188,7 @@ static const char * cgi_handler_imgs(int index, int numParams, char *pcParam[], 
   if (imageState == ImageCacheState::Fetching) {
     return "/wait.json";
   }
-  
+
   return "/images.json";
 }
 
@@ -203,7 +203,7 @@ static const char * cgi_handler_next_image(int index, int numParams, char *pcPar
     }
 
     imageState = ImageCacheState::Iterating;
-    
+
     return "/wait.json";
   } else if (imageState == ImageCacheState::Iterating) {
     if (queue_is_empty(&imageQueue)) {
@@ -218,7 +218,7 @@ static const char * cgi_handler_next_image(int index, int numParams, char *pcPar
     imageState = ImageCacheState::Idle;
     return "/done.json";
   }
-  
+
   return "/nextImage.json";
 }
 
@@ -269,7 +269,7 @@ int main() {
   if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID)) {
     printf("Failed to add request for SSID to output queue.");
   }
-  
+
   bool httpInitialized = false;
 
   while(true) {
@@ -304,7 +304,13 @@ int main() {
 
         extern cyw43_t cyw43_state;
         auto ip_addr = cyw43_state.netif[CYW43_ITF_STA].ip_addr.addr;
-        printf("IP Address: %lu.%lu.%lu.%lu\n", ip_addr & 0xFF, (ip_addr >> 8) & 0xFF, (ip_addr >> 16) & 0xFF, ip_addr >> 24);
+	char* ipBuffer = new char[32];
+	memset(ipBuffer, 0, 32);
+	sprintf(ipBuffer, "%lu.%lu.%lu.%lu", ip_addr & 0xFF, (ip_addr >> 8) & 0xFF, (ip_addr >> 16) & 0xFF, ip_addr >> 24);
+	printf("IP Address: %s\n", ipBuffer);
+
+	// Send the IP address to the I2C server.
+	zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_IP_ADDRESS, ipBuffer);
 
 	if (!httpInitialized) {
 	  httpd_init();
@@ -312,7 +318,7 @@ int main() {
 	  printf("Http server initialized.\n");
 	  httpInitialized = true;
 	}
-	
+
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 
         programState = State::Normal;
@@ -330,6 +336,9 @@ int main() {
       if (cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) != CYW43_LINK_UP) {
 	programState = State::WIFIInit;
 	printf("WiFi connecton down.\n");
+
+	// Notify the I2C server that we have lost our network connection.
+	zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_NET_DOWN);
 	cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
 	cyw43_arch_deinit();
       }
@@ -360,7 +369,7 @@ void RebuildImageJson() {
   if (imageJson != NULL) {
     delete[] imageJson;
   }
-  
+
   imageJson = new char[totalSize + 3];
   imageJson[0] = '[';
   int pos = 1;
@@ -381,7 +390,7 @@ void RebuildImageJson() {
   for (auto item: images) {
     delete[] item;
   }
-  
+
   images.clear();
 }
 
@@ -391,7 +400,7 @@ int get_file_contents(struct fs_file *file, const char* fileContents, int fileLe
 
   if (file->pextension) {
     memcpy(file->pextension, fileContents, fileLen + 1);
-    
+
     file->data = (const char *)file->pextension;
     file->len = fileLen;
     file->index = file->len;
@@ -432,7 +441,7 @@ int fs_open_custom(struct fs_file *file, const char *name) {
       delete[] image;
       return retVal;
     }
-    
+
     return 0;
   } else {
     printf("Unable to find %s\n", name);
