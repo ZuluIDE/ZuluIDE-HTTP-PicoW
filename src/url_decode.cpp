@@ -33,9 +33,13 @@ void urldecode(char *str) {
          }
 
          case '%': {
-            // Skip the %
-            read++;
-            sscanf(str + read++, "%2hhx", str + write++);
+            if (sscanf(str + read + 1, "%2hhx", str + write) > 0) {
+                read += 2;
+                write++;
+            }
+            else {
+                str[write++] = '%';
+            }
             break;
          }
 
