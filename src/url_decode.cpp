@@ -33,10 +33,17 @@ void urldecode(char *str) {
          }
 
          case '%': {
-            if (sscanf(str + read + 1, "%2hhx", str + write) > 0) {
-                read += 2;
-                write++;
+            // If there are 2 more chars and they're hex digits
+            if (
+                (read + 2) < len
+                && isxdigit(str[read + 1])
+                && isxdigit(str[read + 2])
+            ) {
+                // Skip the %
+                read++;
+                sscanf(str + read++, "%2hhx", str + write++);
             }
+            // Pass the %
             else {
                 str[write++] = '%';
             }

@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <ctype.h>
 
 void urldecode(char *str);
 
