@@ -22,6 +22,7 @@
 #include "url_decode.h"
 
 void urldecode(char *str) {
+   if (!str) return;
    int len = strlen(str);
    int write = 0;
    for (int read = 0; read < len; read++) {
