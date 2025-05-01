@@ -221,6 +221,10 @@ void ProcessMessages() {
          ProcessServerAPIVersion(toRecv->buffer, toRecv->length);
       } else if (Is(toRecv, I2C_SERVER_SYSTEM_STATUS_JSON)) {
          ProcessSystemStatus(toRecv->buffer, toRecv->length);
+      } else if (Is(toRecv, I2C_SERVER_UPDATE_FILENAME_CACHE)) {
+         ProcessUpdateFilenames(toRecv->buffer, toRecv->length);
+      } else if (Is(toRecv, I2C_SERVER_IMAGE_FILENAME)) {
+         ProcessFilename(toRecv->buffer, toRecv->length);
       } else if (Is(toRecv, I2C_SERVER_IMAGE_JSON)) {
          ProcessImage(toRecv->buffer, toRecv->length);
       } else if (Is(toRecv, I2C_SERVER_SSID)) {

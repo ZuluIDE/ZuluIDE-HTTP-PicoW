@@ -29,8 +29,12 @@ const char *control_js = R"(
 @CONTROL_JS_CONTENT@
 )";
 
-const char *control_2_js = R"(
-@CONTROL_2_JS_CONTENT@
+const char *load_js = R"(
+@LOAD_JS_CONTENT@
+)";
+
+const char *api_js = R"(
+@API_JS_CONTENT@
 )";
 
 const char *version_js = R"(

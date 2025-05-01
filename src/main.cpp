@@ -40,16 +40,23 @@
 #include "url_decode.h"
 
 static const uint I2C_SLAVE_ADDRESS = 0x45;
-static const uint I2C_BAUDRATE = 100000;  // 100 kHz
+static const uint I2C_BAUDRATE = 400000;  // 100 kHz
 
 static const uint I2C_SLAVE_SDA_PIN = 0;  // PICO_DEFAULT_I2C_SDA_PIN; // 4
 static const uint I2C_SLAVE_SCL_PIN = 1;  // PICO_DEFAULT_I2C_SCL_PIN; // 5
+
+enum class FilenameCacheState { Idle, Start, Fetching, Full, Overflow};
 
 enum class ImageCacheState { Idle,
                              Fetching,
                              Full,
                              Iterating,
                              IteratingFinished };
+
+
+static volatile FilenameCacheState filenameState = FilenameCacheState::Idle;
+
+static char filenames_json[FILENAMES_JSON_CACHE_SIZE] = {0};
 
 static volatile ImageCacheState imageState = ImageCacheState::Idle;
 
@@ -148,11 +155,78 @@ void ProcessSystemStatus(const uint8_t *message, size_t length) {
    memcpy(currentStatus, message, MAX_MSG_SIZE);
 }
 
+void ProcessUpdateFilenames(const uint8_t *message, size_t length) {
+   printf("Begining filename cache update process\n");
+   filenameState = FilenameCacheState::Start;
+}
+
 /**
-   Callback function fo rreceiving an image from the I2C server.
+   Callback function for receiving a filename from the I2C server.
+   It adds the filename to JSON file cached in SRAM.
+ */
+void ProcessFilename(const uint8_t *message, size_t length) {
+   const size_t cache_size = sizeof(filenames_json);
+   printf("ProcessFilename length: %d\n", length);
+   if (filenameState == FilenameCacheState::Start) {
+      printf("Processing filenames\n");
+      memset(filenames_json, '\0', cache_size);
+      if (cache_size < sizeof("{\"filenames\":[")) {
+         printf("Filename cache overflowed after init, increase cache size\n");
+         filenameState = FilenameCacheState::Overflow;
+         return;
+      } else {
+         strcat(filenames_json, "{\"filenames\":[");
+      }
+   }
+
+   if (length > 0) {
+      // filename JSON cache overflows on the first filename or proceeding filenames
+      if (
+         (filenameState == FilenameCacheState::Start 
+            && (strlen(filenames_json) + strlen("\"") + length + strlen("\"") + 1 > cache_size)
+         )
+         || (filenameState == FilenameCacheState::Fetching
+            && (strlen(filenames_json) + strlen(",\"") + length + strlen("\"") + 1 > cache_size)
+         )
+      ) {
+         printf("Filename cache overflowed adding \"%s\" to the filename JSON cache\n", message);
+         filenameState = FilenameCacheState::Overflow;
+         return;
+      } else {
+         char *filename = new char[length + 1];
+         memset(filename, '\0', length + 1);
+         memcpy(filename, message, length);
+         printf("Received filename: %s\n", filename);
+         if (filenameState == FilenameCacheState::Start) {
+            strcat(filenames_json, "\"");
+            strcat(filenames_json, filename);
+            strcat(filenames_json, "\"");
+            filenameState = FilenameCacheState::Fetching;
+         } else if (filenameState == FilenameCacheState::Fetching) {
+            strcat(filenames_json, ",\"");
+            strcat(filenames_json, filename);
+            strcat(filenames_json, "\"");
+         }
+         delete[] filename;
+      }
+   } else {
+         if (strlen(filenames_json) + strlen("]}") + 1 > cache_size) {
+            printf("Filename cache overflowed adding closing characters");
+            filenameState = FilenameCacheState::Overflow;
+         } else if (filenameState == FilenameCacheState::Start || filenameState == FilenameCacheState::Fetching){
+            printf("Received filename of length zero, setting state to Full");
+            // All images received.
+            strcat(filenames_json, "]}");
+            filenameState = FilenameCacheState::Full;
+         }
+   }
+}
+
+/**
+   Callback function fo receiving an image from the I2C server.
    If the web service is iterating, the image is cached for the
    next iterate request from the web server client. If the
-   web service is retreiving all fo the images, it is cached in a
+   web service is retrieving all fo the images, it is cached in a
    vector until all are received and a single JSON document
    is built for all of the images.
  */
@@ -257,11 +331,31 @@ static const char *cgi_handler_status(int index, int numParams, char *pcParam[],
    return "/status.json";
 }
 
+static const char *cgi_handler_filenames(int index, int numParams, char *pcParam[], char *pcValue[]) {
+   printf("Sending filenames cached JSON");
+   if (filenameState == FilenameCacheState::Full) {
+      if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_FILENAMES)) {
+         printf("Failed to add fetch filenames to output queue.");
+      }
+   }
+
+   if (filenameState == FilenameCacheState::Start ||  filenameState == FilenameCacheState::Fetching) {
+      return "/wait.json";
+   }
+
+   if (filenameState == FilenameCacheState::Overflow) {
+      return "/overflow.json";
+   }
+
+   return "/filenames.json";
+}
+
 /**
    Fetches the entire set of images. If the images are not yet available then
    a wait response is sent.
  */
 static const char *cgi_handler_imgs(int index, int numParams, char *pcParam[], char *pcValue[]) {
+   printf("Getting all images");
    if (imageState == ImageCacheState::Idle) {
       imageState = ImageCacheState::Fetching;
       if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_IMAGES_JSON)) {
@@ -337,6 +431,7 @@ static const char *cgi_handler_eject(int index, int numParams, char *params[], c
 static const tCGI cgi_handlers[] = {
                                     {"/version", cgi_handler_version},
                                     {"/status", cgi_handler_status},
+                                    {"/filenames", cgi_handler_filenames},
                                     {"/images", cgi_handler_imgs},
                                     {"/image", cgi_handler_image},
                                     {"/eject", cgi_handler_eject},
@@ -514,6 +609,9 @@ int fs_open_custom(struct fs_file *file, const char *name) {
    } else if (strncmp(name, "/wait.json", sizeof("/wait.json")) == 0) {
       auto waitMessage = "{\"status\": \"wait\"}";
       return get_file_contents(file, waitMessage, strlen(waitMessage));
+   } else if (strncmp(name, "/overflow.json", sizeof("/overflow.json")) == 0) {
+      auto waitMessage = "{\"status\": \"overflow\"}";
+      return get_file_contents(file, waitMessage, strlen(waitMessage));
    } else if (strncmp(name, "/done.json", sizeof("/done.json")) == 0) {
       auto doneMessage = "{\"status\": \"done\"}";
       return get_file_contents(file, doneMessage, strlen(doneMessage));
@@ -521,8 +619,10 @@ int fs_open_custom(struct fs_file *file, const char *name) {
       return get_file_contents(file, index_html, strlen(index_html));
    } else if (strncmp(name, "/control.js", sizeof("/control.js")) == 0) {
       return get_file_contents(file, control_js, strlen(control_js));
-   } else if (strncmp(name, "/control2.js", sizeof("/control2.js")) == 0) {
-      return get_file_contents(file, control_2_js, strlen(control_2_js));
+   } else if (strncmp(name, "/load.js", sizeof("/load.js")) == 0) {
+      return get_file_contents(file, load_js, strlen(load_js));
+   } else if (strncmp(name, "/api.js", sizeof("/api.js")) == 0) {
+      return get_file_contents(file, api_js, strlen(api_js));
    } else if (strncmp(name, "/style.css", sizeof("/style.css")) == 0) {
       return get_file_contents(file, style_css, strlen(style_css));
    } else if (strncmp(name, "/style2.css", sizeof("/style2.css")) == 0) {
@@ -533,6 +633,8 @@ int fs_open_custom(struct fs_file *file, const char *name) {
       return get_file_contents(file, style_4_css, strlen(style_4_css));
    } else if (strncmp(name, "/style_rhc.css", sizeof("/style_rhc.css")) == 0) {
       return get_file_contents(file, style_rhc_css, strlen(style_rhc_css));
+   } else if (strncmp(name, "/filenames.json", sizeof("/filenames.json")) == 0) {
+      return get_file_contents(file, filenames_json, strlen(filenames_json));
    } else if (strncmp(name, "/nextImage.json", sizeof("/nextImage.json")) == 0) {
       char *image;
       if (queue_try_remove(&imageQueue, &image)) {

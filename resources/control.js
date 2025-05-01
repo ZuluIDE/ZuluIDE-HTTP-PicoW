@@ -11,13 +11,13 @@ function onload() {
 }
 function ejectClk() {
  fetch('eject')
-  .then(r => r.json())
-  .then(s => { if (s.status != 'ok') alert('Eject failed.'); else setTimeout(refresh, 1500); });
+ .then(r => r.json())
+ .then(s => { if (s.status != 'ok') alert('Eject failed.'); else setTimeout(refresh, 1500); });
 }
 function refresh() {
  fetch('status')
-  .then(response => response.json())
-  .then(status => updateStatus(status));
+ .then(response => response.json())
+ .then(status => updateStatus(status));
 }
 function updateStatus(status) {
  let elm = document.getElementById('dt');
