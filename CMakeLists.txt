@@ -43,15 +43,8 @@ target_include_directories(zuluide_http_picow PRIVATE
 
 file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/control.html FILE_CONTENT)
 file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/control.js CONTROL_JS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/load.js LOAD_JS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/api.js API_JS_CONTENT)
 file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/version.js VERSION_JS_CONTENT)
 file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style.css STYLE_CSS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style2.css STYLE_2_CSS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style3.css STYLE_3_CSS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style4.css STYLE_4_CSS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style_rhc.css STYLE_rhc_CSS_CONTENT)
-
 configure_file(${CMAKE_CURRENT_LIST_DIR}/src/index_html.in ${CMAKE_CURRENT_LIST_DIR}/src/index_html.h @ONLY ESCAPE_QUOTES)
 
 

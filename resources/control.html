@@ -3,10 +3,6 @@
   <head>
     <meta name='viewport' content='width=device-width, initial-scale=1' />
     <link rel='stylesheet' href='style.css' />
-    <link rel='stylesheet' href='style2.css' />
-    <link rel='stylesheet' href='style3.css' />
-    <link rel='stylesheet' href='style4.css' />
-    <link rel='stylesheet' href='style_rhc.css' />
   </head>
   <body onload='lds()'>
     <div class='row'>
@@ -28,7 +24,7 @@
         <div id='si' class='hdn'>
           <select id='newImg'>
           </select><br/>
-          <button class="load" onclick='loadClicked()'>Load</button><button class="cancel" onclick='cancelClicked()' style='float:right;'>Cancel</button>
+          <button class='load' onclick='loadClicked()'>Load</button><button class='cancel' onclick='cancelClicked()' style='float:right;'>Cancel</button>
         </div>
       </div>
     </div>
@@ -56,8 +52,6 @@ function lsc(flnm, old) {
 }
 function lds() {
   lsc('control.js', null);
-  lsc('load.js', onload);
-  lsc('api.js', onload);
   lsc('version.js', onload);
 }
     </script>
