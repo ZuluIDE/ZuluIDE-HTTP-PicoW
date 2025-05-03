@@ -31,7 +31,7 @@ target_sources(zuluide_http_picow PRIVATE src/main.cpp src/url_decode.cpp src/Zu
 #pico_enable_stdio_uart(zuluide_http_picow ENABLED)
 pico_enable_stdio_usb(zuluide_http_picow ENABLED)
 
-add_dependencies(zuluide_http_picow pico_i2c_slave)
+add_dependencies(zuluide_http_picow pico_i2c_slave pico_multicore)
 
 pico_add_extra_outputs(zuluide_http_picow)
 
@@ -55,6 +55,7 @@ target_compile_definitions(zuluide_http_picow PRIVATE
 
 target_link_libraries(zuluide_http_picow
         pico_i2c_slave
+        pico_multicore
         pico_stdlib
         pico_lwip_http
         pico_cyw43_arch_lwip_threadsafe_background)

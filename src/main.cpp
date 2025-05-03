@@ -23,6 +23,7 @@
 #include <pico/i2c_slave.h>
 #include <pico/stdlib.h>
 #include <pico/util/queue.h>
+#include <pico/multicore.h>
 
 #include <cstdio>
 #include <cstring>
@@ -124,7 +125,7 @@ void  ProcessServerAPIVersion(const uint8_t *message, size_t length) {
             {
                matching_major_version = true;
             }
-            }
+         }
       }
       
    }
@@ -179,46 +180,40 @@ void ProcessFilename(const uint8_t *message, size_t length) {
    }
 
    if (length > 0) {
-      // filename JSON cache overflows on the first filename or proceeding filenames
-      if (
-         (filenameState == FilenameCacheState::Start 
-            && (strlen(filenames_json) + strlen("\"") + length + strlen("\"") + 1 > cache_size)
-         )
-         || (filenameState == FilenameCacheState::Fetching
-            && (strlen(filenames_json) + strlen(",\"") + length + strlen("\"") + 1 > cache_size)
-         )
-      ) {
-         printf("Filename cache overflowed adding \"%s\" to the filename JSON cache\n", message);
-         filenameState = FilenameCacheState::Overflow;
-         return;
-      } else {
-         printf("Adding filename \"");
-         for(uint32_t i = 0; i < length; i++) {
-            putchar(message[i]);
+      if (filenameState == FilenameCacheState::Start)
+      {
+         if (strlen(filenames_json) + strlen("\"") + length + strlen("\"") + 1 > cache_size) {
+            printf("Filename cache overflowed adding the first filename JSON cache\n");
+            filenameState = FilenameCacheState::Overflow;
+            return;
          }
-         printf("\"\n");
-         if (filenameState == FilenameCacheState::Start) {
-            strcat(filenames_json, "\"");
-            memcpy(filenames_json + strlen(filenames_json), message, length);
-            strcat(filenames_json, "\"");
-            filenameState = FilenameCacheState::Fetching;
-         } else if (filenameState == FilenameCacheState::Fetching) {
-            strcat(filenames_json, ",\"");
-            memcpy(filenames_json + strlen(filenames_json), message, length);
-            strcat(filenames_json, "\"");
+         strcat(filenames_json, "\"");
+         memcpy(filenames_json + strlen(filenames_json), message, length);
+         strcat(filenames_json, "\"");
+         filenameState = FilenameCacheState::Fetching;
+      } else if (filenameState == FilenameCacheState::Fetching) {
+         if (strlen(filenames_json) + strlen(",\"") + length + strlen("\"") + 1 > cache_size) {
+            printf("Filename cache overflowed adding a filename JSON cache\n");
+            filenameState = FilenameCacheState::Overflow;
+            return;
          }
-
+         strcat(filenames_json, ",\"");
+         memcpy(filenames_json + strlen(filenames_json), message, length);
+         strcat(filenames_json, "\"");
       }
    } else {
+      if (filenameState == FilenameCacheState::Start || filenameState == FilenameCacheState::Fetching)
+      {
          if (strlen(filenames_json) + strlen("]}") + 1 > cache_size) {
             printf("Filename cache overflowed adding closing characters\n");
             filenameState = FilenameCacheState::Overflow;
-         } else if (filenameState == FilenameCacheState::Start || filenameState == FilenameCacheState::Fetching){
+         } else {
             printf("Received filename of length zero, setting state to Full\n");
             // All images received.
             strcat(filenames_json, "]}");
             filenameState = FilenameCacheState::Full;
          }
+      }
    }
 }
 
@@ -435,8 +430,15 @@ static const tCGI cgi_handlers[] = {
                                     {"/image", cgi_handler_image},
                                     {"/eject", cgi_handler_eject},
                                     {"/nextImage", cgi_handler_next_image}};
+void core1_main() {
+   zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
+   multicore_fifo_push_blocking(0xbeef);
+   tight_loop_contents();
+}
 
 int main() {
+   stdio_init_all();
+   
    printf("Starting.\n");
 
    memset(currentStatus, 0, MAX_MSG_SIZE);
@@ -444,9 +446,17 @@ int main() {
    sprintf(versionJson,"{\"clientAPIVersion\":\"%s\", \"serverAPIVersion\": \"server failed to send version\"}", I2C_API_VERSION);
    queue_init(&imageQueue, sizeof(char *), 1);
 
-   stdio_init_all();
 
-   zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
+
+   multicore_launch_core1(core1_main);
+   uint32_t g = multicore_fifo_pop_blocking();
+   if (g == 0xbeef)
+      printf("Core 1 sucessfully launched");
+   else {
+      printf("Core 1 failed to launch");
+   }
+      
+   // zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
 
    if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID)) {
       printf("Failed to add request for SSID to output queue.");

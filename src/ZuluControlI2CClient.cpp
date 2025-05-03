@@ -188,7 +188,7 @@ void Init(uint sdaPin, uint sclPin, uint addr, uint baudrate) {
 
    // Initalize data structures for synchronizing between I2C interrupt and the main process.
    queue_init(&outputQueue, sizeof(Packet*), 20);
-   queue_init(&inputQueue, sizeof(zuluide::i2c::client::Packet*), 20);
+   queue_init(&inputQueue, sizeof(zuluide::i2c::client::Packet*), INPUT_BUFFER_COUNT);
    queue_init(&availInputQueue, sizeof(zuluide::i2c::client::Packet*), INPUT_BUFFER_COUNT);
 
    for (int i = 0; i < INPUT_BUFFER_COUNT; i++) {
