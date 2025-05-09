@@ -60,7 +60,7 @@ Get request that returns all of the images in the system in a JSON array. It wil
 
 Get request that causes the ZuluIDE to eject an image. Always returns a `{"status":"OK"}` JSON document.
 
-### `/images?imageName=myimage.iso`
+### `/image?imageName=myimage.iso`
 
 Get request that causes the ZuluIDE to load the image passed via the `imageName` query parameter.
 
