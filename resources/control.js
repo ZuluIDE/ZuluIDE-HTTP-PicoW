@@ -4,11 +4,13 @@ function showStatus() {
  document.getElementById('st').removeAttribute('class');
  setTimeout(refresh, 1500);
 }
-function onload() {
+
+document.addEventListener('DOMContentLoaded', (event) => {
  let elm = document.getElementById('ar');
  elm.checked = false;
- setTimeout(refresh, 1500);
-}
+ refresh()
+});
+
 function ejectClk() {
  fetch('eject')
  .then(r => r.json())
