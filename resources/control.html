@@ -2,13 +2,10 @@
 <html>
   <head>
     <meta name='viewport' content='width=device-width, initial-scale=1' />
-    <link rel='stylesheet' href='style.css' />
-    <link rel='stylesheet' href='style2.css' />
-    <link rel='stylesheet' href='style3.css' />
-    <link rel='stylesheet' href='style4.css' />
-    <link rel='stylesheet' href='style_rhc.css' />
-  </head>
-  <body onload='lds()'>
+    <script type='text/javascript' src='version.js'></script>
+    <script type='text/javascript' src='control.js'></script>
+    <link rel='stylesheet' href='style.css' />  </head>
+  <body>
     <div class='row'>
       <div class='column'>
         <h1>ZuluIDE Control</h1>
@@ -28,7 +25,7 @@
         <div id='si' class='hdn'>
           <select id='newImg'>
           </select><br/>
-          <button class="load" onclick='loadClicked()'>Load</button><button class="cancel" onclick='cancelClicked()' style='float:right;'>Cancel</button>
+          <button class='load' onclick='loadClicked()'>Load</button><button class='cancel' onclick='cancelClicked()' style='float:right;'>Cancel</button>
         </div>
       </div>
     </div>
@@ -42,23 +39,5 @@
         </div>
       </div>
     </div>
-  <script>
-      
-function lsc(flnm, old) {
-  let s = document.createElement('script');
-  s.type='text/javascript';
-  document.body.appendChild(s);
-  s.onload=old;
-  s.onerror=()=>lsc(flnm);
-  s.async=false;
-  s.src=flnm;
-  s._url=flnm;
-}
-function lds() {
-  lsc('control.js', null);
-  lsc('control2.js', onload);
-  lsc('version.js', onload);
-}
-    </script>
   </body>
 </html>

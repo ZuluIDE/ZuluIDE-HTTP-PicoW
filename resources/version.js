@@ -1,6 +1,6 @@
-function onload() {
-    setTimeout(load_version, 500);
-}
+document.addEventListener('DOMContentLoaded', (event) => {
+    load_version();
+});
 
 function load_version()
 {
@@ -20,4 +20,4 @@ function updateVersion(version) {
      elm = document.getElementById('avm');
      elm.innerHTML = 'Message: ' + version.message; 
     }
-   }
+}

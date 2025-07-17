@@ -22,13 +22,16 @@
 #ifndef ZULU_CONTROL_I2C_CLIENT
 #define ZULU_CONTROL_I2C_CLIENT
 
-#define I2C_API_VERSION "2.0.0"
+#define I2C_API_VERSION "3.0.0"
 
 #define MAX_MSG_SIZE 2048
+#define FILENAMES_JSON_CACHE_SIZE 51200
 #define BUFFER_LENGTH 8
-#define INPUT_BUFFER_COUNT 5
+#define INPUT_BUFFER_COUNT 50
 
 #define I2C_SERVER_API_VERSION  0x1
+#define I2C_SERVER_UPDATE_FILENAME_CACHE 0x8
+#define I2C_SERVER_IMAGE_FILENAME 0x9
 #define I2C_SERVER_SYSTEM_STATUS_JSON 0xA
 #define I2C_SERVER_IMAGE_JSON 0xB
 #define I2C_SERVER_SSID 0xD
@@ -37,6 +40,7 @@
 
 #define I2C_CLIENT_NOOP 0x0
 #define I2C_CLIENT_API_VERSION 0x01
+#define I2C_CLIENT_FETCH_FILENAMES 0x09
 #define I2C_CLIENT_SUBSCRIBE_STATUS_JSON 0xA
 #define I2C_CLIENT_LOAD_IMAGE 0xB
 #define I2C_CLIENT_EJECT_IMAGE 0xC
@@ -94,6 +98,15 @@ void ProcessServerAPIVersion(const uint8_t* message, size_t length);
    Called when a system status update is received from the I2C server.
  */
 void ProcessSystemStatus(const uint8_t* message, size_t length);
+
+/**
+   Called when the server needs to update the list of filenames.
+ */
+void ProcessUpdateFilenames(const uint8_t* message, size_t length);
+/**
+   Called when a filename is received from the I2C server.
+*/
+void ProcessFilename(const uint8_t* message, size_t length);
 
 /**
    Called when an image is received from the I2C server.

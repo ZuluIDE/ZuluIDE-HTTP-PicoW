@@ -23,6 +23,7 @@
 #include <pico/i2c_slave.h>
 #include <pico/stdlib.h>
 #include <pico/util/queue.h>
+#include <pico/multicore.h>
 
 #include <cstdio>
 #include <cstring>
@@ -40,16 +41,23 @@
 #include "url_decode.h"
 
 static const uint I2C_SLAVE_ADDRESS = 0x45;
-static const uint I2C_BAUDRATE = 100000;  // 100 kHz
+static const uint I2C_BAUDRATE = 400000;  // 100 kHz
 
 static const uint I2C_SLAVE_SDA_PIN = 0;  // PICO_DEFAULT_I2C_SDA_PIN; // 4
 static const uint I2C_SLAVE_SCL_PIN = 1;  // PICO_DEFAULT_I2C_SCL_PIN; // 5
+
+enum class FilenameCacheState { Idle, Start, Fetching, Full, Overflow};
 
 enum class ImageCacheState { Idle,
                              Fetching,
                              Full,
                              Iterating,
                              IteratingFinished };
+
+
+static volatile FilenameCacheState filenameState = FilenameCacheState::Idle;
+
+static char filenames_json[FILENAMES_JSON_CACHE_SIZE] = {0};
 
 static volatile ImageCacheState imageState = ImageCacheState::Idle;
 
@@ -117,7 +125,7 @@ void  ProcessServerAPIVersion(const uint8_t *message, size_t length) {
             {
                matching_major_version = true;
             }
-            }
+         }
       }
       
    }
@@ -148,11 +156,72 @@ void ProcessSystemStatus(const uint8_t *message, size_t length) {
    memcpy(currentStatus, message, MAX_MSG_SIZE);
 }
 
+void ProcessUpdateFilenames(const uint8_t *message, size_t length) {
+   printf("Begining filename cache update process\n");
+   filenameState = FilenameCacheState::Start;
+}
+
 /**
-   Callback function fo rreceiving an image from the I2C server.
+   Callback function for receiving a filename from the I2C server.
+   It adds the filename to JSON file cached in SRAM.
+ */
+void ProcessFilename(const uint8_t *message, size_t length) {
+   const size_t cache_size = sizeof(filenames_json);
+   printf("Process filename length: %d\n", length);
+   if (filenameState == FilenameCacheState::Start) {
+      memset(filenames_json, '\0', cache_size);
+      if (cache_size < sizeof("{\"filenames\":[")) {
+         printf("Filename cache overflowed after init, increase cache size\n");
+         filenameState = FilenameCacheState::Overflow;
+         return;
+      } else {
+         strcat(filenames_json, "{\"filenames\":[");
+      }
+   }
+
+   if (length > 0) {
+      if (filenameState == FilenameCacheState::Start)
+      {
+         if (strlen(filenames_json) + strlen("\"") + length + strlen("\"") + 1 > cache_size) {
+            printf("Filename cache overflowed adding the first filename JSON cache\n");
+            filenameState = FilenameCacheState::Overflow;
+            return;
+         }
+         strcat(filenames_json, "\"");
+         memcpy(filenames_json + strlen(filenames_json), message, length);
+         strcat(filenames_json, "\"");
+         filenameState = FilenameCacheState::Fetching;
+      } else if (filenameState == FilenameCacheState::Fetching) {
+         if (strlen(filenames_json) + strlen(",\"") + length + strlen("\"") + 1 > cache_size) {
+            printf("Filename cache overflowed adding a filename JSON cache\n");
+            filenameState = FilenameCacheState::Overflow;
+            return;
+         }
+         strcat(filenames_json, ",\"");
+         memcpy(filenames_json + strlen(filenames_json), message, length);
+         strcat(filenames_json, "\"");
+      }
+   } else {
+      if (filenameState == FilenameCacheState::Start || filenameState == FilenameCacheState::Fetching)
+      {
+         if (strlen(filenames_json) + strlen("]}") + 1 > cache_size) {
+            printf("Filename cache overflowed adding closing characters\n");
+            filenameState = FilenameCacheState::Overflow;
+         } else {
+            printf("Received filename of length zero, setting state to Full\n");
+            // All images received.
+            strcat(filenames_json, "]}");
+            filenameState = FilenameCacheState::Full;
+         }
+      }
+   }
+}
+
+/**
+   Callback function fo receiving an image from the I2C server.
    If the web service is iterating, the image is cached for the
    next iterate request from the web server client. If the
-   web service is retreiving all fo the images, it is cached in a
+   web service is retrieving all fo the images, it is cached in a
    vector until all are received and a single JSON document
    is built for all of the images.
  */
@@ -191,12 +260,12 @@ void ProcessSSID(const uint8_t *message, size_t length) {
       wifiSSID = std::string(WIFI_SSID);
       printf("Using WIFI SSID (%s) compiled into the application.\n", wifiSSID.c_str());
    } else {
-      printf("No WIFI SSID retrieved from server and none compiled into the application.");
+      printf("No WIFI SSID retrieved from server and none compiled into the application.\n");
    }
 
    if (wifiSSID.length() > 0) {
       if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID_PASS)) {
-         printf("Failed to add request for SSID password to output queue.");
+         printf("Failed to add request for SSID password to output queue.\n");
       }
 
       programState = State::WaitingForPassword;
@@ -215,13 +284,13 @@ void ProcessPassword(const uint8_t *message, size_t length) {
       wifiPass = std::string(WIFI_PASSWORD);
       printf("Using WIFI password (%s) compiled into the application.\n", wifiPass.c_str());
    } else {
-      printf("No WIFI password retrieved from server and none compiled into the application.");
+      printf("No WIFI password retrieved from server and none compiled into the application.\n");
    }
 
    if (wifiPass.length() > 0) {
       // Put a subscribe message in the queue so when we connect, we immediately subscribe.
       if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_SUBSCRIBE_STATUS_JSON)) {
-         printf("Failed to add subscribe to output queue.");
+         printf("Failed to add subscribe to output queue.\n");
       }
 
       programState = State::WIFIInit;
@@ -257,6 +326,25 @@ static const char *cgi_handler_status(int index, int numParams, char *pcParam[],
    return "/status.json";
 }
 
+static const char *cgi_handler_filenames(int index, int numParams, char *pcParam[], char *pcValue[]) {
+   printf("Sending filenames cached JSON\n");
+   if (filenameState == FilenameCacheState::Full) {
+      if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_FILENAMES)) {
+         printf("Failed to add fetch filenames to output queue.\n");
+      }
+   }
+
+   if (filenameState == FilenameCacheState::Start ||  filenameState == FilenameCacheState::Fetching) {
+      return "/wait.json";
+   }
+
+   if (filenameState == FilenameCacheState::Overflow) {
+      return "/overflow.json";
+   }
+
+   return "/filenames.json";
+}
+
 /**
    Fetches the entire set of images. If the images are not yet available then
    a wait response is sent.
@@ -265,7 +353,7 @@ static const char *cgi_handler_imgs(int index, int numParams, char *pcParam[], c
    if (imageState == ImageCacheState::Idle) {
       imageState = ImageCacheState::Fetching;
       if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_IMAGES_JSON)) {
-         printf("Failed to add fetch images to output queue.");
+         printf("Failed to add fetch images to output queue.\n");
       }
    }
 
@@ -283,7 +371,7 @@ static const char *cgi_handler_imgs(int index, int numParams, char *pcParam[], c
 static const char *cgi_handler_next_image(int index, int numParams, char *pcParam[], char *pcValue[]) {
    if (imageState == ImageCacheState::Idle) {
       if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_ITR_IMAGE)) {
-         printf("Failed to add iterate image to output queue.");
+         printf("Failed to add iterate image to output queue.\n");
       }
 
       imageState = ImageCacheState::Iterating;
@@ -295,7 +383,7 @@ static const char *cgi_handler_next_image(int index, int numParams, char *pcPara
       } else {
          // We have something that we are about to send out, lets fetch the next so we can be ready.
          if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_ITR_IMAGE)) {
-            printf("Failed to add iterate image to output queue.");
+            printf("Failed to add iterate image to output queue.\n");
          }
       }
    } else if (imageState == ImageCacheState::IteratingFinished) {
@@ -337,12 +425,20 @@ static const char *cgi_handler_eject(int index, int numParams, char *params[], c
 static const tCGI cgi_handlers[] = {
                                     {"/version", cgi_handler_version},
                                     {"/status", cgi_handler_status},
+                                    {"/filenames", cgi_handler_filenames},
                                     {"/images", cgi_handler_imgs},
                                     {"/image", cgi_handler_image},
                                     {"/eject", cgi_handler_eject},
                                     {"/nextImage", cgi_handler_next_image}};
+void core1_main() {
+   zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
+   multicore_fifo_push_blocking(0xbeef);
+   tight_loop_contents();
+}
 
 int main() {
+   stdio_init_all();
+   
    printf("Starting.\n");
 
    memset(currentStatus, 0, MAX_MSG_SIZE);
@@ -350,9 +446,17 @@ int main() {
    sprintf(versionJson,"{\"clientAPIVersion\":\"%s\", \"serverAPIVersion\": \"server failed to send version\"}", I2C_API_VERSION);
    queue_init(&imageQueue, sizeof(char *), 1);
 
-   stdio_init_all();
 
-   zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
+
+   multicore_launch_core1(core1_main);
+   uint32_t g = multicore_fifo_pop_blocking();
+   if (g == 0xbeef)
+      printf("Core 1 sucessfully launched");
+   else {
+      printf("Core 1 failed to launch");
+   }
+      
+   // zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
 
    if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID)) {
       printf("Failed to add request for SSID to output queue.");
@@ -487,16 +591,12 @@ void RebuildImageJson() {
 
 int get_file_contents(struct fs_file *file, const char *fileContents, int fileLen) {
    memset(file, 0, sizeof(struct fs_file));
-   file->pextension = mem_malloc(fileLen + 1);
-
-   if (file->pextension) {
-      memcpy(file->pextension, fileContents, fileLen + 1);
-
-      file->data = (const char *)file->pextension;
+   if (fileContents) {
+      file->pextension = (void*)fileContents;
+      file->data = NULL;
       file->len = fileLen;
-      file->index = file->len;
+      file->index = 0;
       file->flags = FS_FILE_FLAGS_HEADER_PERSISTENT;
-
       return 1;
    } else {
       return 0;
@@ -504,6 +604,7 @@ int get_file_contents(struct fs_file *file, const char *fileContents, int fileLe
 }
 
 int fs_open_custom(struct fs_file *file, const char *name) {
+   printf("open custom name: %s\n", name);
    if (strncmp(name, "/status.json", sizeof("/status.json")) == 0) {
       return get_file_contents(file, currentStatus, strlen(currentStatus));
    } else if (strncmp(name, "/images.json", sizeof("/images.json")) == 0) {
@@ -514,6 +615,9 @@ int fs_open_custom(struct fs_file *file, const char *name) {
    } else if (strncmp(name, "/wait.json", sizeof("/wait.json")) == 0) {
       auto waitMessage = "{\"status\": \"wait\"}";
       return get_file_contents(file, waitMessage, strlen(waitMessage));
+   } else if (strncmp(name, "/overflow.json", sizeof("/overflow.json")) == 0) {
+      auto waitMessage = "{\"status\": \"overflow\"}";
+      return get_file_contents(file, waitMessage, strlen(waitMessage));
    } else if (strncmp(name, "/done.json", sizeof("/done.json")) == 0) {
       auto doneMessage = "{\"status\": \"done\"}";
       return get_file_contents(file, doneMessage, strlen(doneMessage));
@@ -521,18 +625,10 @@ int fs_open_custom(struct fs_file *file, const char *name) {
       return get_file_contents(file, index_html, strlen(index_html));
    } else if (strncmp(name, "/control.js", sizeof("/control.js")) == 0) {
       return get_file_contents(file, control_js, strlen(control_js));
-   } else if (strncmp(name, "/control2.js", sizeof("/control2.js")) == 0) {
-      return get_file_contents(file, control_2_js, strlen(control_2_js));
    } else if (strncmp(name, "/style.css", sizeof("/style.css")) == 0) {
       return get_file_contents(file, style_css, strlen(style_css));
-   } else if (strncmp(name, "/style2.css", sizeof("/style2.css")) == 0) {
-      return get_file_contents(file, style_2_css, strlen(style_2_css));
-   } else if (strncmp(name, "/style3.css", sizeof("/style3.css")) == 0) {
-      return get_file_contents(file, style_3_css, strlen(style_3_css));
-   } else if (strncmp(name, "/style4.css", sizeof("/style4.css")) == 0) {
-      return get_file_contents(file, style_4_css, strlen(style_4_css));
-   } else if (strncmp(name, "/style_rhc.css", sizeof("/style_rhc.css")) == 0) {
-      return get_file_contents(file, style_rhc_css, strlen(style_rhc_css));
+   } else if (strncmp(name, "/filenames.json", sizeof("/filenames.json")) == 0) {
+      return get_file_contents(file, filenames_json, strlen(filenames_json));
    } else if (strncmp(name, "/nextImage.json", sizeof("/nextImage.json")) == 0) {
       char *image;
       if (queue_try_remove(&imageQueue, &image)) {
@@ -554,12 +650,15 @@ int fs_open_custom(struct fs_file *file, const char *name) {
 }
 
 void fs_close_custom(struct fs_file *file) {
-   if (file && file->pextension) {
-      mem_free(file->pextension);
-      file->pextension = NULL;
-   }
+   printf("close custom closing file\n");
 }
 
-int fs_read_custom(struct fs_file *file, char *buffer, int count) {
-   return FS_READ_EOF;
+int fs_read_custom(struct fs_file *file, char *buffer, int count) 
+{
+   if (file->index >= file->len)
+      return FS_READ_EOF;
+   int read = (file->len - file->index < count) ? file->len - file->index : count; 
+   memcpy(buffer, (char*) file->pextension + file->index, read);
+   file->index += read;
+   return read;
 }

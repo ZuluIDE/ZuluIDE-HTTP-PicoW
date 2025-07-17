@@ -21,36 +21,20 @@
 #ifndef INDEX_HTML_H
 #define INDEX_HTML_H
 
-const char *index_html =  R"(
+const char index_html[] =  R"(
 @FILE_CONTENT@
 )";
 
-const char *control_js = R"(
+const char control_js[] = R"(
 @CONTROL_JS_CONTENT@
 )";
 
-const char *control_2_js = R"(
-@CONTROL_2_JS_CONTENT@
-)";
-
-const char *version_js = R"(
+const char version_js[] = R"(
 @VERSION_JS_CONTENT@
 )";
 
-const char *style_css = R"(
+const char style_css[] = R"(
 @STYLE_CSS_CONTENT@
 )";
 
-const char *style_2_css = R"(
-@STYLE_2_CSS_CONTENT@
-)";
-const char *style_3_css = R"(
-@STYLE_3_CSS_CONTENT@
-)";
-const char *style_4_css = R"(
-@STYLE_4_CSS_CONTENT@
-)";
-const char *style_rhc_css = R"(
-@STYLE_rhc_CSS_CONTENT@
-)";
 #endif

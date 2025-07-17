@@ -31,7 +31,7 @@ target_sources(zuluide_http_picow PRIVATE src/main.cpp src/url_decode.cpp src/Zu
 #pico_enable_stdio_uart(zuluide_http_picow ENABLED)
 pico_enable_stdio_usb(zuluide_http_picow ENABLED)
 
-add_dependencies(zuluide_http_picow pico_i2c_slave)
+add_dependencies(zuluide_http_picow pico_i2c_slave pico_multicore)
 
 pico_add_extra_outputs(zuluide_http_picow)
 
@@ -43,14 +43,8 @@ target_include_directories(zuluide_http_picow PRIVATE
 
 file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/control.html FILE_CONTENT)
 file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/control.js CONTROL_JS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/control2.js CONTROL_2_JS_CONTENT)
 file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/version.js VERSION_JS_CONTENT)
 file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style.css STYLE_CSS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style2.css STYLE_2_CSS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style3.css STYLE_3_CSS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style4.css STYLE_4_CSS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style_rhc.css STYLE_rhc_CSS_CONTENT)
-
 configure_file(${CMAKE_CURRENT_LIST_DIR}/src/index_html.in ${CMAKE_CURRENT_LIST_DIR}/src/index_html.h @ONLY ESCAPE_QUOTES)
 
 
@@ -61,6 +55,7 @@ target_compile_definitions(zuluide_http_picow PRIVATE
 
 target_link_libraries(zuluide_http_picow
         pico_i2c_slave
+        pico_multicore
         pico_stdlib
         pico_lwip_http
         pico_cyw43_arch_lwip_threadsafe_background)
