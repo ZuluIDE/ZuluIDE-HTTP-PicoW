@@ -21,6 +21,13 @@
 
 #include "url_decode.h"
 
+int hexToInt(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
 void urldecode(char *str) {
    if (!str) return;
    int len = strlen(str);
@@ -39,9 +46,9 @@ void urldecode(char *str) {
                 && isxdigit(str[read + 1])
                 && isxdigit(str[read + 2])
             ) {
-                // Skip the %
-                read++;
-                sscanf(str + read++, "%2hhx", str + write++);
+                // scanff with %2hhx does not work correctly when run on the RP2040
+                str[write++] = (hexToInt(str[read+1]) << 4) + hexToInt(str[read+2]);
+                read+=2;
             }
             // Pass the %
             else {
