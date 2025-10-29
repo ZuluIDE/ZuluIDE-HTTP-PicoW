@@ -89,6 +89,10 @@ static State programState = State::WaitForAPIVersion;
 
 void RebuildImageJson();
 
+static uint32_t millis() {
+   return to_ms_since_boot(get_absolute_time());
+}
+
 namespace zuluide::i2c::client {
 
 /**
@@ -438,7 +442,6 @@ void core1_main() {
 
 int main() {
    stdio_init_all();
-   
    printf("Starting.\n");
 
    memset(currentStatus, 0, MAX_MSG_SIZE);
@@ -451,20 +454,41 @@ int main() {
    multicore_launch_core1(core1_main);
    uint32_t g = multicore_fifo_pop_blocking();
    if (g == 0xbeef)
-      printf("Core 1 sucessfully launched");
+      printf("Core 1 successfully launched");
    else {
       printf("Core 1 failed to launch");
    }
-      
-   // zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
 
+   // zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
    if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID)) {
       printf("Failed to add request for SSID to output queue.");
    }
 
+   if (cyw43_arch_init()) {
+      printf("failed to initialize\n");
+      return 1;
+   }
    bool httpInitialized = false;
-
+   bool started_blink = true;
+   bool blink_on = false;
+   uint32_t start_time = millis();
+   int number_of_blinks = 3;
    while (true) {
+      // blink number_of_blink when board is powered on
+      if (started_blink)
+      {
+         if ((uint32_t)(millis() - start_time) > 500)
+         {
+            blink_on = !blink_on;
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, blink_on);
+            start_time = millis();
+            if (!blink_on && --number_of_blinks <= 0)
+            {
+               started_blink = false;
+            }
+         }
+      }
+
       switch (programState) {
          case State::WaitForAPIVersion:
             zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_API_VERSION, I2C_API_VERSION);
@@ -478,6 +502,8 @@ int main() {
          }
 
          case State::WIFIInit: {
+            started_blink = false;
+            cyw43_arch_deinit();
             if (cyw43_arch_init()) {
                printf("failed to initialize\n");
                return 1;
@@ -536,6 +562,7 @@ int main() {
                // Notify the I2C server that we have lost our network connection.
                zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_NET_DOWN);
                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+               started_blink = false;
                cyw43_arch_deinit();
             }
             break;
