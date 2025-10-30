@@ -46,6 +46,13 @@ static const uint I2C_BAUDRATE = 400000;  // 100 kHz
 static const uint I2C_SLAVE_SDA_PIN = 0;  // PICO_DEFAULT_I2C_SDA_PIN; // 4
 static const uint I2C_SLAVE_SCL_PIN = 1;  // PICO_DEFAULT_I2C_SCL_PIN; // 5
 
+static const uint8_t GPIO_BOARD_TYPE = 5; // Determins if the shield is using a Pico or a laid down RP2040
+static const uint8_t GPIO_MCU_LED    = 26;
+
+// Board type A uses a Pico W with minimal GPIO break out
+// Board type B uses a laid down RP2040 with GPIO break out
+static bool g_board_type_b = false;
+
 enum class FilenameCacheState { Idle, Start, Fetching, Full, Overflow};
 
 enum class ImageCacheState { Idle,
@@ -425,7 +432,6 @@ static const char *cgi_handler_eject(int index, int numParams, char *params[], c
    zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_EJECT_IMAGE);
    return "/ok.json";
 }
-
 static const tCGI cgi_handlers[] = {
                                     {"/version", cgi_handler_version},
                                     {"/status", cgi_handler_status},
@@ -441,6 +447,21 @@ void core1_main() {
 }
 
 int main() {
+   gpio_set_pulls(GPIO_BOARD_TYPE, true, false);
+   // wait for pulls
+   busy_wait_us(1);
+   g_board_type_b = !gpio_get(GPIO_BOARD_TYPE);
+   if (g_board_type_b)
+   {
+      // init Led connected directly to the MCU
+      gpio_set_function(GPIO_MCU_LED, GPIO_FUNC_SIO);
+      gpio_set_pulls(GPIO_MCU_LED, false, false);
+      gpio_put(GPIO_MCU_LED, true);
+      gpio_set_drive_strength(GPIO_MCU_LED, GPIO_DRIVE_STRENGTH_12MA);
+      gpio_set_slew_rate(GPIO_MCU_LED, GPIO_SLEW_RATE_SLOW);
+      gpio_set_dir(GPIO_MCU_LED, true);
+   }
+
    stdio_init_all();
    printf("Starting.\n");
 
@@ -468,6 +489,7 @@ int main() {
       printf("failed to initialize\n");
       return 1;
    }
+
    bool httpInitialized = false;
    bool started_blink = true;
    bool blink_on = false;
@@ -480,6 +502,7 @@ int main() {
          if ((uint32_t)(millis() - start_time) > 500)
          {
             blink_on = !blink_on;
+            gpio_put(GPIO_MCU_LED, blink_on);
             cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, blink_on);
             start_time = millis();
             if (!blink_on && --number_of_blinks <= 0)
@@ -503,6 +526,7 @@ int main() {
 
          case State::WIFIInit: {
             started_blink = false;
+            gpio_put(GPIO_MCU_LED, false);
             cyw43_arch_deinit();
             if (cyw43_arch_init()) {
                printf("failed to initialize\n");
@@ -562,6 +586,7 @@ int main() {
                // Notify the I2C server that we have lost our network connection.
                zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_NET_DOWN);
                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
+               gpio_put(GPIO_MCU_LED, false);
                started_blink = false;
                cyw43_arch_deinit();
             }
