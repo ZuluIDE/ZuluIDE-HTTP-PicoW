@@ -1,4 +1,32 @@
 /* milligram CSS */
+:root {
+  --color-text: #606c76;
+  --color-bg: #fff;
+  --color-primary: #59a5f1;
+  --color-border: #d1d1d1;
+  --color-hr: #f4f5f6;
+  --color-select-bg: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-text: #c9d1d9;
+    --color-bg: #111;
+    --color-primary: #58a6ff;
+    --color-border: #30363d;
+    --color-hr: #21262d;
+    --color-select-bg: #161b22;
+  }
+
+  select {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 8" width="30"><path fill="%2330363d" d="M0,0l6,8l6-8"/></svg>');
+  }
+
+  select:focus {
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 8" width="30"><path fill="%2358a6ff" d="M0,0l6,8l6-8"/></svg>');
+  }
+}
+
 *,
 *:after,
 *:before {
@@ -11,7 +39,8 @@ html {
 }
 
 body {
-  color: #606c76;
+  background-color: var(--color-bg);
+  color: var(--color-text);
   font-family: 'Roboto', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
   font-size: 1.6em;
   font-weight: 300;
@@ -24,8 +53,8 @@ button,
 input[type='button'],
 input[type='reset'],
 input[type='submit'] {
-  background-color: #59a5f1;
-  border: 0.1rem solid black;
+  background-color: var(--color-primary);
+  border: 0.1rem solid var(--color-border);
   border-radius: .4rem;
   color: #fff;
   cursor: pointer;
@@ -51,15 +80,15 @@ input[type='reset']:focus,
 input[type='reset']:hover,
 input[type='submit']:focus,
 input[type='submit']:hover {
-  background-color: #606c76;
-  border-color: #606c76;
+  background-color: var(--color-text);
+  border-color: var(--color-text);
   color: #fff;
   outline: 0;
 }
 
 hr {
   border: 0;
-  border-top: 0.1rem solid #f4f5f6;
+  border-top: 0.1rem solid var(--color-hr);
   margin: 3.0rem 0;
 }
 
@@ -67,28 +96,21 @@ hr {
 
 select {
     -webkit-appearance: none;
-    background-color: transparent;
-    border: 0.1rem solid #d1d1d1;
+    background: var(--color-select-bg) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 8" width="30"><path fill="%23d1d1d1" d="M0,0l6,8l6-8"/></svg>') center right no-repeat;
+    border: 0.1rem solid var(--color-border);
     border-radius: .4rem;
     box-shadow: none;
     box-sizing: inherit;
+    color: var(--color-text);
     height: 3.8rem;
-    padding: .6rem 1.0rem .7rem;
+    padding: .6rem 3.0rem .7rem 1.0rem;
     width: 100%;
   }
-  
-  select:focus {
-    border-color: #59a5f1;
-    outline: 0;
-  }
-  
-  select {
-    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 8" width="30"><path fill="%23d1d1d1" d="M0,0l6,8l6-8"/></svg>') center right no-repeat;
-    padding-right: 3.0rem;
-  }
-  
+
   select:focus {
     background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 8" width="30"><path fill="%2359a5f1" d="M0,0l6,8l6-8"/></svg>');
+    border-color: var(--color-primary);
+    outline: 0;
   }
   
   select[multiple] {
