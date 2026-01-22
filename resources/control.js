@@ -1,4 +1,5 @@
 var timer;
+
 function showStatus() {
  document.getElementById('si').setAttribute('class', 'hdn');
  document.getElementById('st').removeAttribute('class');
@@ -6,8 +7,20 @@ function showStatus() {
 }
 
 document.addEventListener('DOMContentLoaded', (event) => {
- let elm = document.getElementById('ar');
- elm.checked = false;
+  if (typeof(Storage) !== 'undefined') {
+    let refreshTime = localStorage.getItem('refreshTime');
+    if (refreshTime !== null) {
+      let refreshTimeElm = document.getElementById('rt');
+      refreshTimeElm.value = refreshTime;
+    }
+    let autoRefreshOn = localStorage.getItem('autoRefreshOn');
+    if (autoRefreshOn !== null)
+    {
+      let autoRefreshElm = document.getElementById('ar');
+      autoRefreshElm.checked = !!autoRefreshOn; 
+    }
+  }
+ autoRefresh();
  refresh()
 });
 
@@ -23,14 +36,23 @@ function refresh() {
 }
 function updateStatus(status) {
  let elm = document.getElementById('dt');
- elm.innerHTML = (status.isPrimary ? 'Primary' : 'Secondary') + ' CD-ROM';
- elm = document.getElementById('img');
- elm.innerHTML = status.image ? status.image.filename : '';
+  elm.innerHTML = (status.isPrimary ? 'Primary' : 'Secondary') + ' CD-ROM';
+  elm = document.getElementById('img');
+  elm.innerHTML = status.image ? status.image.filename : '';
 }
+
 function autoRefresh() {
+ let refreshTimeElm = document.getElementById('rt');
+ let interval = parseInt(refreshTimeElm.value, 10);
  let elm = document.getElementById('ar');
+ if (typeof(Storage) !== 'undefined') {
+  localStorage.setItem('autoRefreshOn', elm.checked ? 'true' : '');
+  localStorage.setItem('refreshTime', refreshTimeElm.value);
+ }
+
  if (elm.checked) {
-  timer = setInterval(refresh, 45000);
+  clearTimeout(timer);
+  timer = setInterval(refresh, interval);
  } else if (timer) {
   clearTimeout(timer);
  }
