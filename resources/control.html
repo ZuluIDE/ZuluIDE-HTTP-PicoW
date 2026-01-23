@@ -20,7 +20,17 @@
           Device Type: <span id='dt'></span>
           <hr/>
           <button onclick='refresh()'>Refresh</button><br/>
-          <input type='checkbox' onclick='autoRefresh()' id='ar'>Auto Refresh</input>
+          <input type='checkbox' onchange='autoRefresh()' id='ar' checked></input><label class='label-inline' for='ar'>Auto Refresh</label><br/>
+          <select id='rt' onchange='autoRefresh()'>
+            <option value='500'>0.5s</option>
+            <option value='1000'>1s</option>
+            <option value='2000'>2s</option>
+            <option value='3000' selected>3s</option>
+            <option value='10000'>10s</option>
+            <option value='30000'>30s</option>
+            <option value='60000'>1min</option>
+            <option value='300000'>5min</option>
+          </select>
         </div>
         <div id='si' class='hdn'>
           <select id='newImg'>
