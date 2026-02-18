@@ -33,8 +33,14 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event) {
       case I2C_SLAVE_RECEIVE: {
          if (current == NULL) {
             // Get a buffer.
-            if (!queue_try_remove(&availInputQueue, &current)) {
-               printf("UNABLE TO GET A FREE BUFFER\n");
+            static bool input_queue_removed = true;
+            if (queue_try_remove(&availInputQueue, &current)) {
+               input_queue_removed = true;
+            }
+            else if (input_queue_removed)
+            {
+               printf("Unable to get a free buffer\n");
+               input_queue_removed = false;
             }
          }
 
@@ -233,7 +239,12 @@ void ProcessMessages() {
          ProcessPassword(toRecv->buffer, toRecv->length);
       } else if (Is(toRecv, I2C_SERVER_RESET)) {
          ProcessReset();
+      } else if (Is(toRecv, I2C_SERVER_STATIC_IP)) {
+         ProcessStaticIP(toRecv->buffer, toRecv->length);
+      } else if (Is(toRecv, I2C_SERVER_IP_ADDRESS_ACK)) {
+         ProcessIPAddressAck();
       }
+
 
       // Cleanup buffer and put back into service.
       Cleanup(toRecv);
