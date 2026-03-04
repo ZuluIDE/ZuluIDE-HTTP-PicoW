@@ -14,7 +14,10 @@ endif()
 # ====================================================================================
 cmake_minimum_required(VERSION 3.25)
 
-set(PICO_BOARD pico_w)
+if(NOT DEFINED PICO_BOARD)
+    set(PICO_BOARD pico_w)
+endif()
+
 include(pico_sdk_import.cmake)
 
 project(zuluide_http_picow C CXX ASM)
