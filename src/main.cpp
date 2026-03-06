@@ -37,6 +37,9 @@
 #include "lwip/def.h"
 #include "lwip/mem.h"
 #include "lwip/opt.h"
+#include "lwip/init.h"
+#include "lwip/netif.h"
+#include "lwip/dhcp.h"
 #include "pico/cyw43_arch.h"
 #include "url_decode.h"
 
@@ -61,12 +64,22 @@ enum class ImageCacheState { Idle,
                              Iterating,
                              IteratingFinished };
 
+enum class IPAddressState { Init, Sending, Received};
 
 static volatile FilenameCacheState filenameState = FilenameCacheState::Idle;
 
 static char filenames_json[FILENAMES_JSON_CACHE_SIZE] = {0};
 
 static volatile ImageCacheState imageState = ImageCacheState::Idle;
+
+static volatile IPAddressState ipAddrState = IPAddressState::Init;
+
+bool static_ip_set = false;
+
+static ip4_addr_t static_ip, static_gw, static_netmask;
+
+
+char ipBuffer[32] = {0};
 
 static char versionJson[MAX_MSG_SIZE];
 
@@ -321,6 +334,40 @@ void ProcessReset() {
    // did allow the ZuluSCSI to connect to WiFi.
    watchdog_reboot(0, 0, 10);
 }
+
+void ProcessStaticIP(const uint8_t* message, size_t length)
+{
+   if (length <= 3)
+   {
+      printf("Invalid static IP setting\n");
+   }
+   else
+   {
+      static_ip_set = true;
+      const char *ip_data =  (const char*) &message[2];
+      if (strncmp("ip",(const char*) message, 2) == 0)
+      {
+         printf("Setting static IP to %s\n", ip_data);
+         ip4addr_aton(ip_data, &static_ip);
+      }
+      else if (strncmp("nm", (const char*)message, 2) == 0)
+      {
+         printf("Setting static IP netmask to %s\n", ip_data);
+         ip4addr_aton(ip_data, &static_netmask);
+      }
+      else if (strncmp("gw", (const char*)message, 2) == 0)
+      {
+         printf("Setting static IP gateway to %s\n", ip_data);
+         ip4addr_aton(ip_data, &static_gw);
+      }
+   }
+}
+
+void ProcessIPAddressAck() {
+   ipAddrState = IPAddressState::Received;
+   printf("Server received IP Address.\n");
+
+}
 }  // namespace zuluide::i2c::client
 
 /**
@@ -494,6 +541,7 @@ int main() {
    bool started_blink = true;
    bool blink_on = false;
    uint32_t start_time = millis();
+   uint32_t send_ip_start_time = millis();
    int number_of_blinks = 3;
    while (true) {
       // blink number_of_blink when board is powered on
@@ -525,17 +573,21 @@ int main() {
          }
 
          case State::WIFIInit: {
+            printf("Initializing to WiFi.\n");
             started_blink = false;
             gpio_put(GPIO_MCU_LED, false);
-            cyw43_arch_deinit();
-            if (cyw43_arch_init()) {
-               printf("failed to initialize\n");
-               return 1;
-            }
 
             cyw43_arch_enable_sta_mode();
             // Disable powersave mode.
             cyw43_wifi_pm(&cyw43_state, cyw43_pm_value(CYW43_NO_POWERSAVE_MODE, 20, 1, 1, 1));
+
+            if (static_ip_set)
+            {
+               cyw43_arch_lwip_begin();
+               dhcp_stop(cyw43_state.netif);     // turn off DHCP
+               netif_set_addr(cyw43_state.netif, &static_ip,&static_netmask,&static_gw);
+               cyw43_arch_lwip_end();
+            }
 
             programState = State::WIFIDown;
             break;
@@ -550,13 +602,12 @@ int main() {
 
                extern cyw43_t cyw43_state;
                auto ip_addr = cyw43_state.netif[CYW43_ITF_STA].ip_addr.addr;
-               char *ipBuffer = new char[32];
+
                memset(ipBuffer, 0, 32);
                sprintf(ipBuffer, "%lu.%lu.%lu.%lu", ip_addr & 0xFF, (ip_addr >> 8) & 0xFF, (ip_addr >> 16) & 0xFF, ip_addr >> 24);
                printf("IP Address: %s\n", ipBuffer);
 
-               // Send the IP address to the I2C server.
-               zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_IP_ADDRESS, ipBuffer);
+               ipAddrState = IPAddressState::Sending;
 
                if (!httpInitialized) {
                   httpd_init();
@@ -580,7 +631,7 @@ int main() {
 
             // Test for WIFI going down.
             if (cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) != CYW43_LINK_UP) {
-               programState = State::WIFIInit;
+               programState = State::WIFIDown;
                printf("WiFi connection down.\n");
 
                // Notify the I2C server that we have lost our network connection.
@@ -588,7 +639,6 @@ int main() {
                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
                gpio_put(GPIO_MCU_LED, false);
                started_blink = false;
-               cyw43_arch_deinit();
             }
             break;
          }
@@ -598,7 +648,21 @@ int main() {
             break;
          }
       }
+
+      if ((uint32_t)(millis() - send_ip_start_time) > 3000)
+      {
+
+         if (IPAddressState::Sending == ipAddrState)
+         {
+            printf("Sending ip address %s\n", ipBuffer);
+            // Send the IP address to the I2C server.
+            zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_IP_ADDRESS, ipBuffer);
+         }
+         send_ip_start_time = millis();
+      }
    }
+
+
 
    return 0;
 }

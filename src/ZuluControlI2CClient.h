@@ -22,7 +22,7 @@
 #ifndef ZULU_CONTROL_I2C_CLIENT
 #define ZULU_CONTROL_I2C_CLIENT
 
-#define I2C_API_VERSION "3.0.1"
+#define I2C_API_VERSION "3.1.0"
 
 #define MAX_MSG_SIZE 2048
 #define FILENAMES_JSON_CACHE_SIZE 51200
@@ -37,6 +37,8 @@
 #define I2C_SERVER_SSID 0xD
 #define I2C_SERVER_SSID_PASS 0xE
 #define I2C_SERVER_RESET 0xF
+#define I2C_SERVER_STATIC_IP 0x10
+#define I2C_SERVER_IP_ADDRESS_ACK 0x11
 
 #define I2C_CLIENT_NOOP 0x0
 #define I2C_CLIENT_API_VERSION 0x01
@@ -127,6 +129,20 @@ void ProcessPassword(const uint8_t* message, size_t length);
    Called when a reset request is received from the server.
  */
 void ProcessReset();
+
+/**
+   Called when server sends static IP information
+   Each string is prefixed with the information type
+   ip - Static IPv4 Address
+   nm - Netmask
+   gw - Gateway
+ */
+void ProcessStaticIP(const uint8_t* message, size_t length);
+
+/**
+   Called when server acknowledges receipt of the clients IP address
+ */
+void ProcessIPAddressAck();
 
 /**
    Configures the I2C communication parameters.
