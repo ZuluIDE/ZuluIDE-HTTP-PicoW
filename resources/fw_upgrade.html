@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name='viewport' content='width=device-width, initial-scale=1' />
+    <script type='text/javascript' src='version.js'></script>
+    <link rel='stylesheet' href='style.css' />  </head>
+  <body>
+    <div class='row'>
+        <div class='column'>
+            <h1>ZuluIDE HTTP Control Interface Firmware Upgrade</h1>
+        </div>
+    </div>
+    <div class='row'>
+        <div class='column'>
+            <p>
+                To upgrade the firmware running on the Pico W or Pico2 W board for ZuluIDE HTTP user interface,
+                please upload the file <code>zuluide_http_picow.uf2</code>.
+            </p>
+            <p>Current firmware version: <span id='cfv'></span></p>
+            <p>
+                <form id="uploadForm">
+                    <label for="fileInput">Firmware file:</label>
+                    <input id="fileInput" type="file" />
+                    <input type="submit" value="Upgrade" />
+                </form>
+            </p>
+            <p id="progress" style="display: none">
+              <progress id="progressBar" value="0" max="100"></progress>
+              <span id="progressText">0%</span>
+            </p>
+        </div>
+    </div>
+  </body>
+  <script>
+    var rebootDelay = 10;
+
+    function rebootWait()
+    {
+      const progressText = document.getElementById("progressText");
+      progressText.textContent = "Upload complete, please wait for reboot.. " + rebootDelay;
+
+      rebootDelay--;
+      if (rebootDelay == 0)
+      {
+        document.location = '/';
+      }
+      else
+      {
+        setTimeout(rebootWait, 1000);
+      }
+    }
+
+    document.getElementById("uploadForm").addEventListener("submit", function(e) {
+      e.preventDefault();
+
+      const file = document.getElementById("fileInput").files[0];
+
+      document.getElementById('progress').style.display = 'block';
+
+      const progressBar = document.getElementById("progressBar");
+      const progressText = document.getElementById("progressText");
+
+      const xhr = new XMLHttpRequest();
+
+      xhr.open("POST", "/fw_upgrade.cgi");
+      xhr.setRequestHeader("Content-Type", "application/octet-stream");
+
+      xhr.upload.onprogress = function(event) {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          progressBar.value = percent;
+          progressText.textContent = percent + "%";
+        }
+      };
+
+      xhr.onload = function() {
+        progressBar.value = 100;
+        if (xhr.status === 200) {
+          rebootWait();
+        } else {
+          progressText.textContent = "Upload failed";
+        }
+      };
+
+      xhr.onerror = function() {
+        progressText.textContent = "Upload error";
+      };
+
+      xhr.send(file);
+    });
+  </script>
+</html>

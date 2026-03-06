@@ -32,6 +32,7 @@
 
 #include "ZuluControlI2CClient.h"
 #include "index_html.h"
+#include "fw_upgrade.h"
 #include "lwip/apps/fs.h"
 #include "lwip/apps/httpd.h"
 #include "lwip/def.h"
@@ -436,6 +437,8 @@ static const char *cgi_handler_eject(int index, int numParams, char *params[], c
    zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_EJECT_IMAGE);
    return "/ok.json";
 }
+
+
 static const tCGI cgi_handlers[] = {
                                     {"/version", cgi_handler_version},
                                     {"/status", cgi_handler_status},
@@ -443,11 +446,63 @@ static const tCGI cgi_handlers[] = {
                                     {"/images", cgi_handler_imgs},
                                     {"/image", cgi_handler_image},
                                     {"/eject", cgi_handler_eject},
-                                    {"/nextImage", cgi_handler_next_image}};
+                                    {"/nextImage", cgi_handler_next_image}
+};
+
+/* Handlers for POST requests */
+
+err_t (*g_httpd_post_receive_data_handler)(void *connection, struct pbuf *p);
+void (*g_httpd_post_finished_handler)(void *connection, char *response_uri, u16_t response_uri_len);
+
+err_t httpd_post_begin(void *connection, const char *uri, const char *http_request,
+                       u16_t http_request_len, int content_len, char *response_uri,
+                       u16_t response_uri_len, u8_t *post_auto_wnd)
+{
+   if (strcmp(uri, "/fw_upgrade.cgi") == 0)
+   {
+      g_httpd_post_receive_data_handler = &fwupgrade_post_receive_data;
+      g_httpd_post_finished_handler = &fwupgrade_post_finished;
+      return fwupgrade_post_begin(connection, uri, http_request, http_request_len, content_len,
+         response_uri, response_uri_len, post_auto_wnd);
+   }
+
+   g_httpd_post_receive_data_handler = nullptr;
+   g_httpd_post_finished_handler = nullptr;
+   return ERR_VAL;
+}
+
+err_t httpd_post_receive_data(void *connection, struct pbuf *p)
+{
+   err_t result = ERR_VAL;
+   if (g_httpd_post_receive_data_handler)
+      result = g_httpd_post_receive_data_handler(connection, p);
+
+   return result;
+}
+
+void httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len)
+{
+   if (g_httpd_post_finished_handler)
+      g_httpd_post_finished_handler(connection, response_uri, response_uri_len);
+
+   g_httpd_post_receive_data_handler = nullptr;
+   g_httpd_post_finished_handler = nullptr;
+}
+
 void core1_main() {
    zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
    multicore_fifo_push_blocking(0xbeef);
    tight_loop_contents();
+}
+
+void start_multicore_i2c() {
+   multicore_launch_core1(core1_main);
+   uint32_t g = multicore_fifo_pop_blocking();
+   if (g == 0xbeef)
+      printf("Core 1 successfully launched");
+   else {
+      printf("Core 1 failed to launch");
+   }
 }
 
 int main() {
@@ -474,15 +529,7 @@ int main() {
    sprintf(versionJson,"{\"clientAPIVersion\":\"%s\", \"serverAPIVersion\": \"server failed to send version\"}", I2C_API_VERSION);
    queue_init(&imageQueue, sizeof(char *), 1);
 
-
-
-   multicore_launch_core1(core1_main);
-   uint32_t g = multicore_fifo_pop_blocking();
-   if (g == 0xbeef)
-      printf("Core 1 successfully launched");
-   else {
-      printf("Core 1 failed to launch");
-   }
+   start_multicore_i2c();
 
    // zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
    if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID)) {
@@ -679,6 +726,8 @@ int fs_open_custom(struct fs_file *file, const char *name) {
       return get_file_contents(file, doneMessage, strlen(doneMessage));
    } else if (strncmp(name, "/index.html", sizeof("/index.html")) == 0) {
       return get_file_contents(file, index_html, strlen(index_html));
+   } else if (strncmp(name, "/fw_upgrade.html", sizeof("/fw_upgrade.html")) == 0) {
+      return get_file_contents(file, fw_upgrade_html, strlen(fw_upgrade_html));
    } else if (strncmp(name, "/control.js", sizeof("/control.js")) == 0) {
       return get_file_contents(file, control_js, strlen(control_js));
    } else if (strncmp(name, "/style.css", sizeof("/style.css")) == 0) {

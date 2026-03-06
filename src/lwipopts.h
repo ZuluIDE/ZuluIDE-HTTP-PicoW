@@ -56,6 +56,7 @@
 #define LWIP_HTTPD_DYNAMIC_FILE_READ 1 
 #define LWIP_HTTPD_DYNAMIC_HEADERS  1
 #define LWIP_HTTPD_FILE_EXTENSION   1
+#define LWIP_HTTPD_SUPPORT_POST     1
 
 #ifndef NDEBUG
 #define LWIP_DEBUG                  1
