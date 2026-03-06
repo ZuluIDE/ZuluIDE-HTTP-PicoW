@@ -118,6 +118,10 @@ void  ProcessServerAPIVersion(const uint8_t *message, size_t length) {
    char* period_location = strchr(I2C_API_VERSION, '.');
    client_major_version = strtoul(I2C_API_VERSION, &period_location, 10);
 
+   strcat(versionJson, ", \"clientFWVersion\":\"");
+   strcat(versionJson, FW_VERSION);
+   strcat(versionJson, "\"");
+
    if (length > 0)
    {
       serverAPIVersion = std::string((const char*)message);

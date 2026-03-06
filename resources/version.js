@@ -12,6 +12,8 @@ function load_version()
 function updateVersion(version) {
     let elm = document.getElementById('cav');
     elm.innerHTML = version.clientAPIVersion;
+    elm = document.getElementById('cfv');
+    elm.innerHTML = version.clientFWVersion;
     elm = document.getElementById('sav');
     if (version.serverAPIVersion)
      elm.innerHTML = version.serverAPIVersion;

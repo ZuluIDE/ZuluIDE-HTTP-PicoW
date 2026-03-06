@@ -50,6 +50,20 @@ file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/version.js VERSION_JS_CONTENT)
 file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style.css STYLE_CSS_CONTENT)
 configure_file(${CMAKE_CURRENT_LIST_DIR}/src/index_html.in ${CMAKE_CURRENT_LIST_DIR}/src/index_html.h @ONLY ESCAPE_QUOTES)
 
+# Try to get git hash for version number
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE FW_GITHASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE GIT_RESULT
+    ERROR_QUIET
+)
+
+if(GIT_RESULT EQUAL 0)
+    add_compile_definitions(FW_GITHASH="${FW_GITHASH}")
+endif()
+
 
 target_compile_definitions(zuluide_http_picow PRIVATE
         WIFI_PASSWORD=\"${WIFI_PASSWORD}\"
