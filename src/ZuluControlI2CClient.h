@@ -22,7 +22,7 @@
 #ifndef ZULU_CONTROL_I2C_CLIENT
 #define ZULU_CONTROL_I2C_CLIENT
 
-#define I2C_API_VERSION "3.0.1"
+#define I2C_API_VERSION "3.1.0"
 
 #define MAX_MSG_SIZE 2048
 #define FILENAMES_JSON_CACHE_SIZE 51200
@@ -49,8 +49,7 @@
 #define I2C_CLIENT_FETCH_SSID_PASS 0xF
 #define I2C_CLIENT_FETCH_ITR_IMAGE 0x10
 #define I2C_CLIENT_IP_ADDRESS 0x11
-#define I2C_CLIENT_NET_DOWN 0x12
-
+#define I2C_CLIENT_LOG_MSG 0x12
 
 #include <pico/i2c_slave.h>
 #include <pico/stdlib.h>

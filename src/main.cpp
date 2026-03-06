@@ -92,6 +92,18 @@ enum class State {
                    WIFIDown,
                    Normal };
 
+namespace ClientMessage {
+   namespace Prefix
+   {
+      constexpr char Normal  = 'n';
+      constexpr char Debug   = 'd';
+      constexpr char Unknown = 'u';
+   }
+   enum class Type {
+                     Normal,
+                     Debug
+   };
+}
 static State programState = State::WaitForAPIVersion;
 
 void RebuildImageJson();
@@ -101,6 +113,36 @@ static uint32_t millis() {
 }
 
 namespace zuluide::i2c::client {
+/**
+ * Send message to i2c server to log
+ */
+void LogMessageToServer(const char *message, ClientMessage::Type type = ClientMessage::Type::Normal)
+{
+   // Adjust max length for prefixing message with message type
+   const size_t adjusted_max_msg_len = MAX_MSG_SIZE - 1;
+   size_t length = strnlen(message, adjusted_max_msg_len);
+   char* payload = new char[length+2];
+   memset(payload, '\0', length+2);
+   switch(type)
+   {
+      case ClientMessage::Type::Normal:
+         payload[0] = ClientMessage::Prefix::Normal;
+         break;
+      case ClientMessage::Type::Debug:
+         payload[0] = ClientMessage::Prefix::Debug;
+         break;
+      default:
+         payload[0] = ClientMessage::Prefix::Unknown;
+   }
+   memcpy(&payload[1], message, length);
+   // end string if message was longer than limit
+   if (length == adjusted_max_msg_len)
+      payload[length+1] = '\0';
+
+   printf("%s\n", &payload[1]);
+   zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_LOG_MSG, payload);
+   delete[] payload;
+}
 
 /**
    Callback function for receiving I2C Server API version string.
@@ -446,6 +488,8 @@ void core1_main() {
    tight_loop_contents();
 }
 
+using zuluide::i2c::client::LogMessageToServer;
+
 int main() {
    gpio_set_pulls(GPIO_BOARD_TYPE, true, false);
    // wait for pulls
@@ -486,7 +530,7 @@ int main() {
    }
 
    if (cyw43_arch_init()) {
-      printf("failed to initialize\n");
+      LogMessageToServer("Failed to initialize WiFi interface. WiFi client halting.");
       return 1;
    }
 
@@ -529,7 +573,7 @@ int main() {
             gpio_put(GPIO_MCU_LED, false);
             cyw43_arch_deinit();
             if (cyw43_arch_init()) {
-               printf("failed to initialize\n");
+               LogMessageToServer("Failed to initialize WiFi interface. WiFi client halting.");
                return 1;
             }
 
@@ -542,9 +586,9 @@ int main() {
          }
 
          case State::WIFIDown: {
-            printf("Connecting to WiFi.\n");
+            LogMessageToServer("Connecting to WiFi.");
             if (cyw43_arch_wifi_connect_timeout_ms(wifiSSID.c_str(), wifiPass.c_str(), CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-               printf("Failed to connect to WiFi.\n");
+               LogMessageToServer("Failed to connect to WiFi.");
             } else {
                printf("Connected to WiFi.\n");
 
@@ -561,14 +605,14 @@ int main() {
                if (!httpInitialized) {
                   httpd_init();
                   http_set_cgi_handlers(cgi_handlers, sizeof(cgi_handlers)/sizeof(cgi_handlers[0]));
-                  printf("Http server initialized.\n");
+                  LogMessageToServer("Http server initialized.", ClientMessage::Type::Debug);
                   httpInitialized = true;
                }
 
                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
 
                programState = State::Normal;
-               printf("System Ready\n");
+               LogMessageToServer("System Ready", ClientMessage::Type::Debug);
             }
 
             break;
@@ -581,10 +625,7 @@ int main() {
             // Test for WIFI going down.
             if (cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) != CYW43_LINK_UP) {
                programState = State::WIFIInit;
-               printf("WiFi connection down.\n");
-
-               // Notify the I2C server that we have lost our network connection.
-               zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_NET_DOWN);
+               LogMessageToServer("WiFi connection down.");
                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
                gpio_put(GPIO_MCU_LED, false);
                started_blink = false;
