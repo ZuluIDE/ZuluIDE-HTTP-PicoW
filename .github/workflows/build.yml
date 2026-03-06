@@ -54,7 +54,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           cd universal_binary/build
-          gh release create  --latest --repo ${GITHUB_REPOSITORY} release-${{steps.date.outputs.date}}-${{github.run_attempt}} zuluide_http_picow.uf2
+          gh release create  --latest --repo ${GITHUB_REPOSITORY} release-${{steps.date.outputs.date}}-${{github.run_number}} zuluide_http_picow.uf2
 
       - name: Upload to newly created release
         env: 
