@@ -31,8 +31,32 @@ ExternalProject_Add(platform_pico2w
             INSTALL_COMMAND ""
 )
 
+
+# Pico bootrom allows approx 500 ms after last block before it disconnects.
+# Depending on operating system, if we put whole RP2040 image first, the
+# computer may give an error message even though flashing succeeds.
+# Instead, arrange the combined UF2 like this:
+# [All except last block of RP2040] [All of RP2350] [Last block of RP2040]
+
+set(RP2040_UF2 ${CMAKE_CURRENT_BINARY_DIR}/platform_picow/zuluide_http_picow.uf2)
+set(RP2040_UF2_PART1 ${CMAKE_CURRENT_BINARY_DIR}/platform_picow/zuluide_http_picow_part1.uf2)
+set(RP2040_UF2_PART2 ${CMAKE_CURRENT_BINARY_DIR}/platform_picow/zuluide_http_picow_part2.uf2)
+set(SPLIT_UF2_PY ${CMAKE_CURRENT_SOURCE_DIR}/split_uf2.py)
+
+add_custom_command(
+    OUTPUT ${RP2040_UF2_PART1} ${RP2040_UF2_PART2}
+    COMMAND python ${SPLIT_UF2_PY} ${RP2040_UF2} ${RP2040_UF2_PART1} ${RP2040_UF2_PART2}
+    DEPENDS ${RP2040_UF2} ${SPLIT_UF2_PY}
+    COMMENT "Splitting ${RP2040_UF2}"
+    VERBATIM
+)
+
+set(PLATFORM_UF2s
+    ${RP2040_UF2_PART1}
+    ${CMAKE_CURRENT_BINARY_DIR}/platform_pico2w/zuluide_http_picow.uf2
+    ${RP2040_UF2_PART2}
+)
 set(COMBINED_UF2 zuluide_http_picow.uf2)
-set(PLATFORM_UF2s ${CMAKE_CURRENT_BINARY_DIR}/platform_picow/zuluide_http_picow.uf2 ${CMAKE_CURRENT_BINARY_DIR}/platform_pico2w/zuluide_http_picow.uf2)
 
 add_custom_command(
     OUTPUT ${COMBINED_UF2}
