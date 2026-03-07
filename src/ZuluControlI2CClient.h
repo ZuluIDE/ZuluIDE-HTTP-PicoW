@@ -24,6 +24,12 @@
 
 #define I2C_API_VERSION "3.1.0"
 
+#ifndef FW_GITHASH
+#define FW_GITHASH ""
+#endif
+
+#define FW_VERSION __DATE__ " " FW_GITHASH
+
 #define MAX_MSG_SIZE 2048
 #define FILENAMES_JSON_CACHE_SIZE 51200
 #define BUFFER_LENGTH 8

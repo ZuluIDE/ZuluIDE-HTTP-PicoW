@@ -11,13 +11,18 @@ function load_version()
 
 function updateVersion(version) {
     let elm = document.getElementById('cav');
-    elm.innerHTML = version.clientAPIVersion;
+    if (elm) elm.innerHTML = version.clientAPIVersion;
+
+    elm = document.getElementById('cfv');
+    if (elm) elm.innerHTML = version.clientFWVersion;
+
     elm = document.getElementById('sav');
-    if (version.serverAPIVersion)
+    if (elm && version.serverAPIVersion)
      elm.innerHTML = version.serverAPIVersion;
+
     if (version.message)
     {
      elm = document.getElementById('avm');
-     elm.innerHTML = 'Message: ' + version.message; 
+     if (elm) elm.innerHTML = 'Message: ' + version.message;
     }
 }

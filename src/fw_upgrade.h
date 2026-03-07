@@ -17,28 +17,21 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
-**/
-#ifndef INDEX_HTML_H
-#define INDEX_HTML_H
+ **/
 
-const char index_html[] =  R"(
-@CONTROL_HTML_CONTENT@
-)";
+#pragma once
 
-const char fw_upgrade_html[] =  R"(
-@FW_UPGRADE_HTML_CONTENT@
-)";
+#include "lwip/apps/httpd.h"
 
-const char control_js[] = R"(
-@CONTROL_JS_CONTENT@
-)";
+// This module defines handlers for HTTP POST requests used for firmware upgrade
 
-const char version_js[] = R"(
-@VERSION_JS_CONTENT@
-)";
+// Called from httpd_post_begin()
+err_t fwupgrade_post_begin(void *connection, const char *uri, const char *http_request,
+                       u16_t http_request_len, int content_len, char *response_uri,
+                       u16_t response_uri_len, u8_t *post_auto_wnd);
 
-const char style_css[] = R"(
-@STYLE_CSS_CONTENT@
-)";
+// Called from httpd_post_receive_data
+err_t fwupgrade_post_receive_data(void *connection, struct pbuf *p);
 
-#endif
+// Called from http_post_finished
+void fwupgrade_post_finished(void *connection, char *response_uri, u16_t response_uri_len);
