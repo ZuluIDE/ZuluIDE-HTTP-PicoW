@@ -24,9 +24,9 @@ The PicoW reads the WiFi SSID and password from the ZuluIDE via I2C. You set the
 
 
     [UI]
+    wifissid="MY_NETWORK_SSID" # SSID for the WIFI network
     wifipassword="MY_PASSWORD" # Password for the WIFI network. 
     # Any special characters must be in double quotes, as per the example above
-    wifissid="MY_NETWORK_SSID" # SSID for the WIFI network
 
 
 ## Connecting PicoW to ZuluIDE
