@@ -59,6 +59,8 @@
 #define I2C_CLIENT_FETCH_ITR_IMAGE 0x10
 #define I2C_CLIENT_IP_ADDRESS 0x11
 #define I2C_CLIENT_LOG_MSG 0x12
+#define I2C_CLIENT_RESET_QUEUE 0xFF
+
 #ifndef I2C_CMD_RETRY_MS
 #define I2C_CMD_RETRY_MS 500
 #endif
@@ -103,6 +105,11 @@ bool EnqueueRequest(uint8_t request);
    Enqueues a request to send to the I2C server with the provided string argument.
  */
 bool EnqueueRequest(uint8_t request, const char* toSend);
+
+/**
+   Resets the request queue
+ */
+bool EnqueueReset();
 
 /**
    Called when the Server API version is received from the server.

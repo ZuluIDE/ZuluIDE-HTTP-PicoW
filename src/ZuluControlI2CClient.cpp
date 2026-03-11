@@ -155,6 +155,15 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event) {
 }
 
 bool EnqueueRequest(uint8_t request) {
+   if (request == I2C_CLIENT_RESET_QUEUE) {
+      // Clear the output queue.
+      Packet* toDelete;
+      while (queue_try_remove(&outputQueue, &toDelete)) {
+         delete toDelete;
+      }
+      return true;
+   }
+
    Packet* p = new Packet();
    p->length = 0;
    p->command = request;
@@ -174,6 +183,8 @@ bool EnqueueRequest(uint8_t request, const char* toSend) {
    memcpy(p->buffer, toSend, p->length);
    return queue_try_add(&outputQueue, &p);
 }
+
+
 
 void Init(uint sdaPin, uint sclPin, uint addr, uint baudrate) {
    // Configure pins and I2C.
