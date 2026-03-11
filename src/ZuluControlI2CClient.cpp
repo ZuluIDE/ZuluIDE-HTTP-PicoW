@@ -98,7 +98,7 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event) {
       }
       case I2C_SLAVE_REQUEST: {
          if (current != NULL) {
-            // Reset if a message wasn't receved.
+            // Reset if a message wasn't received.
             current->length = 0;
             current->pos = 0;
             current->state = SendState::None;
@@ -225,6 +225,8 @@ void ProcessMessages() {
    if (TryReceive(&toRecv)) {
       if (Is(toRecv, I2C_SERVER_API_VERSION)) {
          ProcessServerAPIVersion(toRecv->buffer, toRecv->length);
+      } else if (Is(toRecv, I2C_SERVER_WIFI_CONNECT)) {
+         ProcessWiFiConnect();
       } else if (Is(toRecv, I2C_SERVER_SYSTEM_STATUS_JSON)) {
          ProcessSystemStatus(toRecv->buffer, toRecv->length);
       } else if (Is(toRecv, I2C_SERVER_UPDATE_FILENAME_CACHE)) {

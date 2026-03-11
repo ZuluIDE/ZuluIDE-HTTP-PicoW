@@ -22,7 +22,7 @@
 #ifndef ZULU_CONTROL_I2C_CLIENT
 #define ZULU_CONTROL_I2C_CLIENT
 
-#define I2C_API_VERSION "3.1.0"
+#define I2C_API_VERSION "3.2.0"
 
 #define MAX_MSG_SIZE 2048
 #define FILENAMES_JSON_CACHE_SIZE 51200
@@ -30,6 +30,7 @@
 #define INPUT_BUFFER_COUNT 50
 
 #define I2C_SERVER_API_VERSION  0x1
+#define I2C_SERVER_WIFI_CONNECT 0x2
 #define I2C_SERVER_UPDATE_FILENAME_CACHE 0x8
 #define I2C_SERVER_IMAGE_FILENAME 0x9
 #define I2C_SERVER_SYSTEM_STATUS_JSON 0xA
@@ -53,6 +54,13 @@
 #define I2C_CLIENT_IP_ADDRESS 0x11
 #define I2C_CLIENT_NET_DOWN 0x12
 
+#ifndef I2C_CMD_RETRY_MS
+#define I2C_CMD_RETRY_MS 500
+#endif
+
+#ifndef WIFI_CONNECT_TIMEOUT_MS
+#define WIFI_CONNECT_TIMEOUT_MS 6000
+#endif
 
 #include <pico/i2c_slave.h>
 #include <pico/stdlib.h>
@@ -95,6 +103,11 @@ bool EnqueueRequest(uint8_t request, const char* toSend);
    Called when the Server API version is received from the server.
 */
 void ProcessServerAPIVersion(const uint8_t* message, size_t length);
+
+/**
+   Called when sever request the WiFi to connect.
+*/
+void ProcessWiFiConnect();
 
 /**
    Called when a system status update is received from the I2C server.
