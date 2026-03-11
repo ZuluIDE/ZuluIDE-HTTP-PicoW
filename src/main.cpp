@@ -25,7 +25,9 @@
 #include <pico/util/queue.h>
 #include <pico/multicore.h>
 
+
 #include <cstdio>
+#include <cstdarg>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -38,6 +40,9 @@
 #include "lwip/def.h"
 #include "lwip/mem.h"
 #include "lwip/opt.h"
+#include "lwip/init.h"
+#include "lwip/netif.h"
+#include "lwip/dhcp.h"
 #include "pico/cyw43_arch.h"
 #include "url_decode.h"
 
@@ -62,12 +67,22 @@ enum class ImageCacheState { Idle,
                              Iterating,
                              IteratingFinished };
 
+enum class IPAddressState { Init, Sending, Received};
 
 static volatile FilenameCacheState filenameState = FilenameCacheState::Idle;
 
 static char filenames_json[FILENAMES_JSON_CACHE_SIZE] = {0};
 
 static volatile ImageCacheState imageState = ImageCacheState::Idle;
+
+static volatile IPAddressState ipAddrState = IPAddressState::Init;
+
+bool static_ip_set = false;
+
+static ip4_addr_t static_ip, static_gw, static_netmask;
+
+
+char ipBuffer[32] = {0};
 
 static char versionJson[MAX_MSG_SIZE];
 
@@ -81,14 +96,18 @@ static char *imageJson = NULL;
 
 static std::string wifiPass;
 
+static bool wifiPassSet = false;
+
 static std::string wifiSSID;
 
 static std::string serverAPIVersion;
 
 enum class State { 
+                   Unknown,
                    WaitForAPIVersion,
                    WaitingForSSID,
                    WaitingForPassword,
+                   WaitingForConnect,
                    WIFIInit,
                    WIFIDown,
                    Normal };
@@ -107,42 +126,64 @@ namespace ClientMessage {
 }
 static State programState = State::WaitForAPIVersion;
 
+
+
 void RebuildImageJson();
 
 static uint32_t millis() {
    return to_ms_since_boot(get_absolute_time());
 }
 
-namespace zuluide::i2c::client {
 /**
+ * Resets the client state, including clearing the output queue and any stored static IP information.
+ */
+static void reset() {
+   zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_RESET_QUEUE);
+   static_ip_set = false;
+   memset(&static_ip, 0, sizeof(static_ip));
+   memset(&static_netmask, 0, sizeof(static_netmask));
+   memset(&static_gw, 0, sizeof(static_gw));
+}
+
+namespace zuluide::i2c::client {
+
+   /**
  * Send message to i2c server to log
  */
-void LogMessageToServer(const char *message, ClientMessage::Type type = ClientMessage::Type::Normal)
+void LogMessageToServer(ClientMessage::Type type, const char* format, ...)
 {
-   // Adjust max length for prefixing message with message type
-   const size_t adjusted_max_msg_len = MAX_MSG_SIZE - 1;
-   size_t length = strnlen(message, adjusted_max_msg_len);
-   char* payload = new char[length+2];
-   memset(payload, '\0', length+2);
+   // Prepend a character to indicate the type of message being sent.
+   char prefix  = ClientMessage::Prefix::Unknown;
    switch(type)
    {
       case ClientMessage::Type::Normal:
-         payload[0] = ClientMessage::Prefix::Normal;
+         prefix = ClientMessage::Prefix::Normal;
          break;
       case ClientMessage::Type::Debug:
-         payload[0] = ClientMessage::Prefix::Debug;
+         prefix = ClientMessage::Prefix::Debug;
          break;
       default:
-         payload[0] = ClientMessage::Prefix::Unknown;
+         prefix = ClientMessage::Prefix::Unknown;
    }
-   memcpy(&payload[1], message, length);
-   // end string if message was longer than limit
-   if (length == adjusted_max_msg_len)
-      payload[length+1] = '\0';
+   // Minimize the size need to store format with the prefix in message.
+   size_t format_len = strlen(format);
+   if (format_len > MAX_MSG_SIZE - 2) {
+      format_len = MAX_MSG_SIZE - 2;
+   }
+   char *message = new char[format_len + 2];
+   memset(message, '\0', format_len + 2);
+   message[0] = prefix;
+   strncpy(message + 1, format, format_len);
 
-   printf("%s\n", &payload[1]);
+   // Use printf formatting to build payload message, then send to server and print to console.
+   char payload[MAX_MSG_SIZE] = {0};
+   va_list args;
+   va_start(args, format);
+   vsnprintf(payload, sizeof(payload), message, args);
+   va_end(args);
+   printf("%s\n", payload + 1);
    zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_LOG_MSG, payload);
-   delete[] payload;
+   delete[] message;
 }
 
 /**
@@ -202,7 +243,13 @@ void  ProcessServerAPIVersion(const uint8_t *message, size_t length) {
    }
 
    strcat(versionJson, "}");
+   programState = State::WaitingForSSID;
+}
 
+void ProcessWiFiConnect()
+{
+   printf("Wifi Connect Received\n");
+   programState = State::WIFIInit;
 }
 
 /**
@@ -321,38 +368,23 @@ void ProcessSSID(const uint8_t *message, size_t length) {
       printf("No WIFI SSID retrieved from server and none compiled into the application.\n");
    }
 
-   if (wifiSSID.length() > 0) {
-      if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID_PASS)) {
-         printf("Failed to add request for SSID password to output queue.\n");
-      }
-
-      programState = State::WaitingForPassword;
-   }
+   programState = State::WaitingForPassword;
 }
 
 /**
-   Handles retreiving the wifi password from the server. If one is not provided
-   then a compiled constant is used (if avaialble).
+   Handles retrieving the wifi password from the server. If one is not provided
+   then a compiled constant is used (if available). If a password is not provided
+   then it is assumed to be an open network.
  */
 void ProcessPassword(const uint8_t *message, size_t length) {
    if (length > 0) {
-      wifiPass = std::string((const char *)message);
-      printf("Using WIFI password (%s) from the server.\n", wifiPass.c_str());
-   } else if (sizeof(WIFI_PASSWORD) > 0) {
-      wifiPass = std::string(WIFI_PASSWORD);
-      printf("Using WIFI password (%s) compiled into the application.\n", wifiPass.c_str());
+      printf("Using WIFI password from the server.\n");
    } else {
-      printf("No WIFI password retrieved from server and none compiled into the application.\n");
+      printf("WiFi password cleared, assuming open WiFi network.\n");
    }
-
-   if (wifiPass.length() > 0) {
-      // Put a subscribe message in the queue so when we connect, we immediately subscribe.
-      if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_SUBSCRIBE_STATUS_JSON)) {
-         printf("Failed to add subscribe to output queue.\n");
-      }
-
-      programState = State::WIFIInit;
-   }
+   wifiPass = std::string((const char *)message);
+   wifiPassSet = true;
+   programState = State::WaitingForConnect;
 }
 
 /**
@@ -361,12 +393,42 @@ void ProcessPassword(const uint8_t *message, size_t length) {
  */
 void ProcessReset() {
    printf("Reset Received.\n");
-   // Was set to 1 sec which was causing the controller interface to miss initialization and data
-   // transfer. Setting to 10ms for now, the wasn't any reasoning behind 10ms but it works
-   // with more SD Cards. The theory is some SD cards caused a delay of more than 1 second
-   // while the watch dog was waiting to reboot, causing the ZuluIDE not to connect. Other cards
-   // did allow the ZuluSCSI to connect to WiFi.
-   watchdog_reboot(0, 0, 10);
+   reset();
+   programState = State::WaitForAPIVersion;
+}
+
+void ProcessStaticIP(const uint8_t* message, size_t length)
+{
+   if (length <= 3)
+   {
+      static_ip_set = false;
+   }
+   else
+   {
+      static_ip_set = false;
+      const char *ip_data =  (const char*) &message[2];
+      if (strncmp("ip",(const char*) message, 2) == 0)
+      {
+         printf("Setting static IP to %s\n", ip_data);
+         static_ip_set = ip4addr_aton(ip_data, &static_ip);
+      }
+      else if (strncmp("nm", (const char*)message, 2) == 0)
+      {
+         printf("Setting static IP netmask to %s\n", ip_data);
+         static_ip_set = ip4addr_aton(ip_data, &static_netmask);
+      }
+      else if (strncmp("gw", (const char*)message, 2) == 0)
+      {
+         printf("Setting static IP gateway to %s\n", ip_data);
+         static_ip_set = ip4addr_aton(ip_data, &static_gw);
+      }
+   }
+}
+
+void ProcessIPAddressAck() {
+   ipAddrState = IPAddressState::Received;
+   printf("Server received IP Address.\n");
+
 }
 }  // namespace zuluide::i2c::client
 
@@ -534,7 +596,14 @@ void httpd_post_finished(void *connection, char *response_uri, u16_t response_ur
 void core1_main() {
    zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
    multicore_fifo_push_blocking(0xbeef);
-   tight_loop_contents();
+   while(true)
+   {
+      tight_loop_contents();
+   }
+}
+
+static bool has_elapsed(uint32_t start, uint32_t elapsed) {
+   return (uint32_t)(millis() - start) > elapsed;
 }
 
 void start_multicore_i2c() {
@@ -575,13 +644,8 @@ int main() {
 
    start_multicore_i2c();
 
-   // zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
-   if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID)) {
-      printf("Failed to add request for SSID to output queue.");
-   }
-
    if (cyw43_arch_init()) {
-      LogMessageToServer("Failed to initialize WiFi interface. WiFi client halting.");
+      LogMessageToServer(ClientMessage::Type::Normal, "Failed to initialize WiFi interface. WiFi client halting.");
       return 1;
    }
 
@@ -589,7 +653,10 @@ int main() {
    bool started_blink = true;
    bool blink_on = false;
    uint32_t start_time = millis();
+   uint32_t send_ip_start_time = millis();
    int number_of_blinks = 3;
+   uint32_t waiting_start = millis();
+   State last_state = State::Unknown;
    while (true) {
       // blink number_of_blink when board is powered on
       if (started_blink)
@@ -609,88 +676,181 @@ int main() {
 
       switch (programState) {
          case State::WaitForAPIVersion:
-            zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_API_VERSION, I2C_API_VERSION);
-            programState = State::WaitingForSSID;
+            if (programState != last_state || has_elapsed(waiting_start, I2C_CMD_RETRY_MS))
+            {
+               zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_API_VERSION, I2C_API_VERSION);
+               waiting_start = millis();
+            }
+            last_state = programState;
+            zuluide::i2c::client::ProcessMessages();
             break;
          case State::WaitingForSSID:
+            if (programState != last_state || has_elapsed(waiting_start, I2C_CMD_RETRY_MS))
+            {
+               printf("Waiting for SSDI\n");
+               if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID)) {
+                     printf("Failed to add request for SSID to output queue\n");
+               }
+               waiting_start = millis();
+            }
+            last_state = programState;
+            zuluide::i2c::client::ProcessMessages();
+            break;
          case State::WaitingForPassword: {
-            // Waiting to receive the SSID and password via I2C.
+            if (programState != last_state || has_elapsed(waiting_start, I2C_CMD_RETRY_MS))
+            {
+               printf("Waiting for Password\n");
+               if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID_PASS)) {
+                  printf("Failed to add request for Password to output queue\n");
+               }
+            }
+            last_state = programState;
+            zuluide::i2c::client::ProcessMessages();
+            break;
+         }
+         case State::WaitingForConnect:
+         {
+            last_state = programState;
+            printf("Waiting for Connect\n");
             zuluide::i2c::client::ProcessMessages();
             break;
          }
 
          case State::WIFIInit: {
+            last_state = programState;
+            printf("Initializing to WiFi.\n");
             started_blink = false;
             gpio_put(GPIO_MCU_LED, false);
-            cyw43_arch_deinit();
-            if (cyw43_arch_init()) {
-               LogMessageToServer("Failed to initialize WiFi interface. WiFi client halting.");
-               return 1;
-            }
 
             cyw43_arch_enable_sta_mode();
             // Disable powersave mode.
             cyw43_wifi_pm(&cyw43_state, cyw43_pm_value(CYW43_NO_POWERSAVE_MODE, 20, 1, 1, 1));
+
+            if (static_ip_set)
+            {
+               printf("Setting up static IP\n");
+               cyw43_arch_lwip_begin();
+               dhcp_stop(cyw43_state.netif);     // turn off DHCP
+               netif_set_addr(cyw43_state.netif, &static_ip,&static_netmask,&static_gw);
+               cyw43_arch_lwip_end();
+            }
+            else
+            {
+               printf("Setting up DHCP\n");
+               cyw43_arch_lwip_begin();
+               dhcp_start(cyw43_state.netif);     // turn on DHCP
+               cyw43_arch_lwip_end();
+            }
 
             programState = State::WIFIDown;
             break;
          }
 
          case State::WIFIDown: {
-            LogMessageToServer("Connecting to WiFi.");
-            if (cyw43_arch_wifi_connect_timeout_ms(wifiSSID.c_str(), wifiPass.c_str(), CYW43_AUTH_WPA2_AES_PSK, 30000)) {
-               LogMessageToServer("Failed to connect to WiFi.");
+            last_state = programState;
+
+            if (wifiSSID.empty() || sizeof(WIFI_SSID) == 0) {
+               reset();
+               programState = State::WaitingForSSID;
             } else {
-               printf("Connected to WiFi.\n");
+               if (wifiSSID.empty() && sizeof(WIFI_SSID) > 0) {
+                  wifiSSID = WIFI_SSID;
+               }
+               bool open_network = (wifiPassSet && wifiPass.empty()) || (!wifiPassSet && sizeof(WIFI_PASSWORD) == 0);
 
-               extern cyw43_t cyw43_state;
-               auto ip_addr = cyw43_state.netif[CYW43_ITF_STA].ip_addr.addr;
-               char *ipBuffer = new char[32];
-               memset(ipBuffer, 0, 32);
-               sprintf(ipBuffer, "%lu.%lu.%lu.%lu", ip_addr & 0xFF, (ip_addr >> 8) & 0xFF, (ip_addr >> 16) & 0xFF, ip_addr >> 24);
-               printf("IP Address: %s\n", ipBuffer);
-
-               // Send the IP address to the I2C server.
-               zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_IP_ADDRESS, ipBuffer);
-
-               if (!httpInitialized) {
-                  httpd_init();
-                  http_set_cgi_handlers(cgi_handlers, sizeof(cgi_handlers)/sizeof(cgi_handlers[0]));
-                  LogMessageToServer("Http server initialized.", ClientMessage::Type::Debug);
-                  httpInitialized = true;
+               if (open_network) {
+                  LogMessageToServer(ClientMessage::Type::Normal, "Connecting to open WiFi network: %s", wifiSSID.c_str());
+               } else {
+                  LogMessageToServer(ClientMessage::Type::Normal, "Connecting to secured WiFi network: %s", wifiSSID.c_str());
                }
 
-               cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+               int connection_result;  
+               if (open_network) {
+                     connection_result = cyw43_arch_wifi_connect_timeout_ms(
+                        wifiSSID.c_str(),
+                        nullptr,
+                        CYW43_AUTH_OPEN,
+                        WIFI_CONNECT_TIMEOUT_MS);
+               } else {
+                     connection_result = cyw43_arch_wifi_connect_timeout_ms(
+                        wifiSSID.c_str(), wifiPassSet ? wifiPass.c_str() : WIFI_PASSWORD,
+                        CYW43_AUTH_WPA2_AES_PSK,
+                        WIFI_CONNECT_TIMEOUT_MS);
+               }
+               if (PICO_ERROR_NONE != connection_result) {
+                  reset();
+                  LogMessageToServer(ClientMessage::Type::Normal, "Failed to connect to WiFi.");
+                  programState = State::WaitingForSSID;
+               } else {
+                  zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_RESET_QUEUE);
+                  LogMessageToServer(ClientMessage::Type::Normal, "Connected to WiFi.");
+                  extern cyw43_t cyw43_state;
+                  auto ip_addr = cyw43_state.netif[CYW43_ITF_STA].ip_addr.addr;
 
-               programState = State::Normal;
-               LogMessageToServer("System Ready", ClientMessage::Type::Debug);
+                  memset(ipBuffer, 0, 32);
+                  sprintf(ipBuffer, "%lu.%lu.%lu.%lu", ip_addr & 0xFF, (ip_addr >> 8) & 0xFF, (ip_addr >> 16) & 0xFF, ip_addr >> 24);
+                  printf("IP Address: %s\n", ipBuffer);
+
+                  ipAddrState = IPAddressState::Sending;
+
+                  if (!httpInitialized) {
+                     httpd_init();
+                     http_set_cgi_handlers(cgi_handlers, sizeof(cgi_handlers)/sizeof(cgi_handlers[0]));
+                     LogMessageToServer(ClientMessage::Type::Debug, "Http server initialized.");
+                     httpInitialized = true;
+                  }
+
+                  cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
+
+                  // Put a subscribe message in the queue so when we connect, we immediately subscribe.
+                  if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_SUBSCRIBE_STATUS_JSON)) {
+                     printf("Failed to add subscribe to output queue.\n");
+                  }
+                  programState = State::Normal;
+                  LogMessageToServer(ClientMessage::Type::Debug, "System Ready");
+               }
             }
-
             break;
          }
 
          case State::Normal: {
+            last_state = programState;
             // Allow I2C functions to process messages and make callbacks as appropriate.
             zuluide::i2c::client::ProcessMessages();
 
             // Test for WIFI going down.
             if (cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) != CYW43_LINK_UP) {
-               programState = State::WIFIInit;
-               LogMessageToServer("WiFi connection down.");
+               programState = State::WIFIDown;
+               LogMessageToServer(ClientMessage::Type::Normal, "WiFi connection down.\n");
+
                cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
                gpio_put(GPIO_MCU_LED, false);
                started_blink = false;
-               cyw43_arch_deinit();
             }
             break;
          }
 
          default: {
+            last_state = State::Unknown;
             printf("Error, unkown state.\n");
             break;
          }
       }
+
+      if ((uint32_t)(millis() - send_ip_start_time) > 3000)
+      {
+
+         if (IPAddressState::Sending == ipAddrState)
+         {
+            printf("Sending ip address %s\n", ipBuffer);
+            // Send the IP address to the I2C server.
+            zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_IP_ADDRESS, ipBuffer);
+         }
+         send_ip_start_time = millis();
+      }
    }
+
+
 
    return 0;
 }

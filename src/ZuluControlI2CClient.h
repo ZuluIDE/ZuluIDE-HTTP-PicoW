@@ -22,7 +22,7 @@
 #ifndef ZULU_CONTROL_I2C_CLIENT
 #define ZULU_CONTROL_I2C_CLIENT
 
-#define I2C_API_VERSION "3.1.0"
+#define I2C_API_VERSION "3.2.0"
 
 #ifndef FW_GITHASH
 #define FW_GITHASH ""
@@ -36,6 +36,7 @@
 #define INPUT_BUFFER_COUNT 50
 
 #define I2C_SERVER_API_VERSION  0x1
+#define I2C_SERVER_WIFI_CONNECT 0x2
 #define I2C_SERVER_UPDATE_FILENAME_CACHE 0x8
 #define I2C_SERVER_IMAGE_FILENAME 0x9
 #define I2C_SERVER_SYSTEM_STATUS_JSON 0xA
@@ -43,6 +44,8 @@
 #define I2C_SERVER_SSID 0xD
 #define I2C_SERVER_SSID_PASS 0xE
 #define I2C_SERVER_RESET 0xF
+#define I2C_SERVER_STATIC_IP 0x10
+#define I2C_SERVER_IP_ADDRESS_ACK 0x11
 
 #define I2C_CLIENT_NOOP 0x0
 #define I2C_CLIENT_API_VERSION 0x01
@@ -56,6 +59,15 @@
 #define I2C_CLIENT_FETCH_ITR_IMAGE 0x10
 #define I2C_CLIENT_IP_ADDRESS 0x11
 #define I2C_CLIENT_LOG_MSG 0x12
+#define I2C_CLIENT_RESET_QUEUE 0xFF
+
+#ifndef I2C_CMD_RETRY_MS
+#define I2C_CMD_RETRY_MS 500
+#endif
+
+#ifndef WIFI_CONNECT_TIMEOUT_MS
+#define WIFI_CONNECT_TIMEOUT_MS 6000
+#endif
 
 #include <pico/i2c_slave.h>
 #include <pico/stdlib.h>
@@ -95,9 +107,19 @@ bool EnqueueRequest(uint8_t request);
 bool EnqueueRequest(uint8_t request, const char* toSend);
 
 /**
+   Resets the request queue
+ */
+bool EnqueueReset();
+
+/**
    Called when the Server API version is received from the server.
 */
 void ProcessServerAPIVersion(const uint8_t* message, size_t length);
+
+/**
+   Called when sever request the WiFi to connect.
+*/
+void ProcessWiFiConnect();
 
 /**
    Called when a system status update is received from the I2C server.
@@ -132,6 +154,20 @@ void ProcessPassword(const uint8_t* message, size_t length);
    Called when a reset request is received from the server.
  */
 void ProcessReset();
+
+/**
+   Called when server sends static IP information
+   Each string is prefixed with the information type
+   ip - Static IPv4 Address
+   nm - Netmask
+   gw - Gateway
+ */
+void ProcessStaticIP(const uint8_t* message, size_t length);
+
+/**
+   Called when server acknowledges receipt of the clients IP address
+ */
+void ProcessIPAddressAck();
 
 /**
    Configures the I2C communication parameters.

@@ -33,8 +33,14 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event) {
       case I2C_SLAVE_RECEIVE: {
          if (current == NULL) {
             // Get a buffer.
-            if (!queue_try_remove(&availInputQueue, &current)) {
-               printf("UNABLE TO GET A FREE BUFFER\n");
+            static bool input_queue_removed = true;
+            if (queue_try_remove(&availInputQueue, &current)) {
+               input_queue_removed = true;
+            }
+            else if (input_queue_removed)
+            {
+               printf("Unable to get a free buffer\n");
+               input_queue_removed = false;
             }
          }
 
@@ -92,7 +98,7 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event) {
       }
       case I2C_SLAVE_REQUEST: {
          if (current != NULL) {
-            // Reset if a message wasn't receved.
+            // Reset if a message wasn't received.
             current->length = 0;
             current->pos = 0;
             current->state = SendState::None;
@@ -149,6 +155,15 @@ static void i2c_slave_handler(i2c_inst_t* i2c, i2c_slave_event_t event) {
 }
 
 bool EnqueueRequest(uint8_t request) {
+   if (request == I2C_CLIENT_RESET_QUEUE) {
+      // Clear the output queue.
+      Packet* toDelete;
+      while (queue_try_remove(&outputQueue, &toDelete)) {
+         delete toDelete;
+      }
+      return true;
+   }
+
    Packet* p = new Packet();
    p->length = 0;
    p->command = request;
@@ -168,6 +183,8 @@ bool EnqueueRequest(uint8_t request, const char* toSend) {
    memcpy(p->buffer, toSend, p->length);
    return queue_try_add(&outputQueue, &p);
 }
+
+
 
 void Init(uint sdaPin, uint sclPin, uint addr, uint baudrate) {
    // Configure pins and I2C.
@@ -219,6 +236,8 @@ void ProcessMessages() {
    if (TryReceive(&toRecv)) {
       if (Is(toRecv, I2C_SERVER_API_VERSION)) {
          ProcessServerAPIVersion(toRecv->buffer, toRecv->length);
+      } else if (Is(toRecv, I2C_SERVER_WIFI_CONNECT)) {
+         ProcessWiFiConnect();
       } else if (Is(toRecv, I2C_SERVER_SYSTEM_STATUS_JSON)) {
          ProcessSystemStatus(toRecv->buffer, toRecv->length);
       } else if (Is(toRecv, I2C_SERVER_UPDATE_FILENAME_CACHE)) {
@@ -233,7 +252,12 @@ void ProcessMessages() {
          ProcessPassword(toRecv->buffer, toRecv->length);
       } else if (Is(toRecv, I2C_SERVER_RESET)) {
          ProcessReset();
+      } else if (Is(toRecv, I2C_SERVER_STATIC_IP)) {
+         ProcessStaticIP(toRecv->buffer, toRecv->length);
+      } else if (Is(toRecv, I2C_SERVER_IP_ADDRESS_ACK)) {
+         ProcessIPAddressAck();
       }
+
 
       // Cleanup buffer and put back into service.
       Cleanup(toRecv);
