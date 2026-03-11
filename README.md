@@ -11,11 +11,12 @@ After you have setup the SDK and build tools run the following instructions:
 
 1. Obtain the ZuluIDE-HTTP-PicoW repository by running: `git clone git@github.com:ZuluIDE/ZuluIDE-HTTP-PicoW.git`
 2. From within a terminal, change to the directory containing the ZuluIDE-HTTP-PicoW repository
-3. Make a build directory ( `mkdir build`) and then change to that directory (`cd build`)
-4. Run `cmake ..`
-5. Run `make`
+3. Configure the project with `cmake -B build -DPICO_BOARD=pico_w` (or `pico2_w`)
+4. Build the project with `cmake --build build`
 
 After doing this, you should find the `zuluide_http_picow.uf2` file in the build directory.
+
+To build an universal binary that works on both PicoW and Pico2W, see [universal_binary/CMakeLists.txt](universal_binary/CMakeLists.txt).
 
 ## Configuring WiFi Settings on ZuluIDE SD Card
 
@@ -23,9 +24,9 @@ The PicoW reads the WiFi SSID and password from the ZuluIDE via I2C. You set the
 
 
     [UI]
+    wifissid="MY_NETWORK_SSID" # SSID for the WIFI network
     wifipassword="MY_PASSWORD" # Password for the WIFI network. 
     # Any special characters must be in double quotes, as per the example above
-    wifissid="MY_NETWORK_SSID" # SSID for the WIFI network
 
 
 ## Connecting PicoW to ZuluIDE

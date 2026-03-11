@@ -14,7 +14,10 @@ endif()
 # ====================================================================================
 cmake_minimum_required(VERSION 3.25)
 
-set(PICO_BOARD pico_w)
+if(NOT DEFINED PICO_BOARD)
+    set(PICO_BOARD pico_w)
+endif()
+
 include(pico_sdk_import.cmake)
 
 project(zuluide_http_picow C CXX ASM)
@@ -26,7 +29,12 @@ pico_sdk_init()
 
 add_executable(zuluide_http_picow)
 
-target_sources(zuluide_http_picow PRIVATE src/main.cpp src/url_decode.cpp src/ZuluControlI2CClient.cpp)
+target_sources(zuluide_http_picow PRIVATE
+    src/main.cpp
+    src/url_decode.cpp
+    src/ZuluControlI2CClient.cpp
+    src/fw_upgrade.cpp
+)
 
 #pico_enable_stdio_uart(zuluide_http_picow ENABLED)
 pico_enable_stdio_usb(zuluide_http_picow ENABLED)
@@ -41,11 +49,41 @@ target_include_directories(zuluide_http_picow PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src
         )
 
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/control.html FILE_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/control.js CONTROL_JS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/version.js VERSION_JS_CONTENT)
-file(READ ${CMAKE_CURRENT_LIST_DIR}/resources/style.css STYLE_CSS_CONTENT)
-configure_file(${CMAKE_CURRENT_LIST_DIR}/src/index_html.in ${CMAKE_CURRENT_LIST_DIR}/src/index_html.h @ONLY ESCAPE_QUOTES)
+set(RESOURCE_FILES
+    ${CMAKE_CURRENT_LIST_DIR}/resources/control.html
+    ${CMAKE_CURRENT_LIST_DIR}/resources/fw_upgrade.html
+    ${CMAKE_CURRENT_LIST_DIR}/resources/control.js
+    ${CMAKE_CURRENT_LIST_DIR}/resources/version.js
+    ${CMAKE_CURRENT_LIST_DIR}/resources/style.css
+)
+
+foreach(f IN LISTS RESOURCE_FILES)
+    get_filename_component(name ${f} NAME)
+    string(REPLACE "." "_" var ${name})
+    string(TOUPPER ${var} var)
+    file(READ ${f} ${var}_CONTENT)
+endforeach()
+
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${RESOURCE_FILES})
+configure_file(
+    ${CMAKE_CURRENT_LIST_DIR}/src/index_html.in
+    ${CMAKE_CURRENT_LIST_DIR}/src/index_html.h
+    @ONLY
+)
+
+# Try to get git hash for version number
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE FW_GITHASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE GIT_RESULT
+    ERROR_QUIET
+)
+
+if(GIT_RESULT EQUAL 0)
+    add_compile_definitions(FW_GITHASH="${FW_GITHASH}")
+endif()
 
 
 target_compile_definitions(zuluide_http_picow PRIVATE
@@ -58,4 +96,6 @@ target_link_libraries(zuluide_http_picow
         pico_multicore
         pico_stdlib
         pico_lwip_http
-        pico_cyw43_arch_lwip_threadsafe_background)
+        boot_uf2_headers
+        pico_cyw43_arch_lwip_threadsafe_background
+)

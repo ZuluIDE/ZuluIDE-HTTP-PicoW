@@ -32,6 +32,7 @@
 
 #include "ZuluControlI2CClient.h"
 #include "index_html.h"
+#include "fw_upgrade.h"
 #include "lwip/apps/fs.h"
 #include "lwip/apps/httpd.h"
 #include "lwip/def.h"
@@ -109,6 +110,18 @@ enum class State {
                    WIFIDown,
                    Normal };
 
+namespace ClientMessage {
+   namespace Prefix
+   {
+      constexpr char Normal  = 'n';
+      constexpr char Debug   = 'd';
+      constexpr char Unknown = 'u';
+   }
+   enum class Type {
+                     Normal,
+                     Debug
+   };
+}
 static State programState = State::WaitForAPIVersion;
 
 static void reset() {
@@ -125,6 +138,36 @@ static uint32_t millis() {
 }
 
 namespace zuluide::i2c::client {
+/**
+ * Send message to i2c server to log
+ */
+void LogMessageToServer(const char *message, ClientMessage::Type type = ClientMessage::Type::Normal)
+{
+   // Adjust max length for prefixing message with message type
+   const size_t adjusted_max_msg_len = MAX_MSG_SIZE - 1;
+   size_t length = strnlen(message, adjusted_max_msg_len);
+   char* payload = new char[length+2];
+   memset(payload, '\0', length+2);
+   switch(type)
+   {
+      case ClientMessage::Type::Normal:
+         payload[0] = ClientMessage::Prefix::Normal;
+         break;
+      case ClientMessage::Type::Debug:
+         payload[0] = ClientMessage::Prefix::Debug;
+         break;
+      default:
+         payload[0] = ClientMessage::Prefix::Unknown;
+   }
+   memcpy(&payload[1], message, length);
+   // end string if message was longer than limit
+   if (length == adjusted_max_msg_len)
+      payload[length+1] = '\0';
+
+   printf("%s\n", &payload[1]);
+   zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_LOG_MSG, payload);
+   delete[] payload;
+}
 
 /**
    Callback function for receiving I2C Server API version string.
@@ -141,6 +184,10 @@ void  ProcessServerAPIVersion(const uint8_t *message, size_t length) {
    unsigned long client_major_version = 0;
    char* period_location = strchr(I2C_API_VERSION, '.');
    client_major_version = strtoul(I2C_API_VERSION, &period_location, 10);
+
+   strcat(versionJson, ", \"clientFWVersion\":\"");
+   strcat(versionJson, FW_VERSION);
+   strcat(versionJson, "\"");
 
    if (length > 0)
    {
@@ -477,6 +524,8 @@ static const char *cgi_handler_eject(int index, int numParams, char *params[], c
    zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_EJECT_IMAGE);
    return "/ok.json";
 }
+
+
 static const tCGI cgi_handlers[] = {
                                     {"/version", cgi_handler_version},
                                     {"/status", cgi_handler_status},
@@ -484,7 +533,49 @@ static const tCGI cgi_handlers[] = {
                                     {"/images", cgi_handler_imgs},
                                     {"/image", cgi_handler_image},
                                     {"/eject", cgi_handler_eject},
-                                    {"/nextImage", cgi_handler_next_image}};
+                                    {"/nextImage", cgi_handler_next_image}
+};
+
+/* Handlers for POST requests */
+
+err_t (*g_httpd_post_receive_data_handler)(void *connection, struct pbuf *p);
+void (*g_httpd_post_finished_handler)(void *connection, char *response_uri, u16_t response_uri_len);
+
+err_t httpd_post_begin(void *connection, const char *uri, const char *http_request,
+                       u16_t http_request_len, int content_len, char *response_uri,
+                       u16_t response_uri_len, u8_t *post_auto_wnd)
+{
+   if (strcmp(uri, "/fw_upgrade.cgi") == 0)
+   {
+      g_httpd_post_receive_data_handler = &fwupgrade_post_receive_data;
+      g_httpd_post_finished_handler = &fwupgrade_post_finished;
+      return fwupgrade_post_begin(connection, uri, http_request, http_request_len, content_len,
+         response_uri, response_uri_len, post_auto_wnd);
+   }
+
+   g_httpd_post_receive_data_handler = nullptr;
+   g_httpd_post_finished_handler = nullptr;
+   return ERR_VAL;
+}
+
+err_t httpd_post_receive_data(void *connection, struct pbuf *p)
+{
+   err_t result = ERR_VAL;
+   if (g_httpd_post_receive_data_handler)
+      result = g_httpd_post_receive_data_handler(connection, p);
+
+   return result;
+}
+
+void httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len)
+{
+   if (g_httpd_post_finished_handler)
+      g_httpd_post_finished_handler(connection, response_uri, response_uri_len);
+
+   g_httpd_post_receive_data_handler = nullptr;
+   g_httpd_post_finished_handler = nullptr;
+}
+
 void core1_main() {
    zuluide::i2c::client::Init(I2C_SLAVE_SDA_PIN, I2C_SLAVE_SCL_PIN, I2C_SLAVE_ADDRESS, I2C_BAUDRATE);
    multicore_fifo_push_blocking(0xbeef);
@@ -497,6 +588,18 @@ void core1_main() {
 static bool has_elapsed(uint32_t start, uint32_t elapsed) {
    return (uint32_t)(millis() - start) > elapsed;
 }
+
+void start_multicore_i2c() {
+   multicore_launch_core1(core1_main);
+   uint32_t g = multicore_fifo_pop_blocking();
+   if (g == 0xbeef)
+      printf("Core 1 successfully launched");
+   else {
+      printf("Core 1 failed to launch");
+   }
+}
+
+using zuluide::i2c::client::LogMessageToServer;
 
 int main() {
    gpio_set_pulls(GPIO_BOARD_TYPE, true, false);
@@ -522,18 +625,10 @@ int main() {
    sprintf(versionJson,"{\"clientAPIVersion\":\"%s\", \"serverAPIVersion\": \"server failed to send version\"}", I2C_API_VERSION);
    queue_init(&imageQueue, sizeof(char *), 1);
 
-
-
-   multicore_launch_core1(core1_main);
-   uint32_t g = multicore_fifo_pop_blocking();
-   if (g == 0xbeef)
-      printf("Core 1 successfully launched\n");
-   else {
-      printf("Core 1 failed to launch\n");
-   }
+   start_multicore_i2c();
 
    if (cyw43_arch_init()) {
-      printf("failed to initialize\n");
+      LogMessageToServer("Failed to initialize WiFi interface. WiFi client halting.");
       return 1;
    }
 
@@ -677,7 +772,7 @@ int main() {
                if (!httpInitialized) {
                   httpd_init();
                   http_set_cgi_handlers(cgi_handlers, sizeof(cgi_handlers)/sizeof(cgi_handlers[0]));
-                  printf("Http server initialized.\n");
+                  LogMessageToServer("Http server initialized.", ClientMessage::Type::Debug);
                   httpInitialized = true;
                }
 
@@ -688,7 +783,7 @@ int main() {
                   printf("Failed to add subscribe to output queue.\n");
                }
                programState = State::Normal;
-               printf("System Ready\n");
+               LogMessageToServer("System Ready", ClientMessage::Type::Debug);
             }
 
             break;
@@ -702,7 +797,7 @@ int main() {
             // Test for WIFI going down.
             if (cyw43_tcpip_link_status(&cyw43_state, CYW43_ITF_STA) != CYW43_LINK_UP) {
                programState = State::WIFIDown;
-               printf("WiFi connection down.\n");
+               LogMessageToServer("WiFi connection down.\n");
 
                // Notify the I2C server that we have lost our network connection.
                zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_NET_DOWN);
@@ -810,6 +905,8 @@ int fs_open_custom(struct fs_file *file, const char *name) {
       return get_file_contents(file, doneMessage, strlen(doneMessage));
    } else if (strncmp(name, "/index.html", sizeof("/index.html")) == 0) {
       return get_file_contents(file, index_html, strlen(index_html));
+   } else if (strncmp(name, "/fw_upgrade.html", sizeof("/fw_upgrade.html")) == 0) {
+      return get_file_contents(file, fw_upgrade_html, strlen(fw_upgrade_html));
    } else if (strncmp(name, "/control.js", sizeof("/control.js")) == 0) {
       return get_file_contents(file, control_js, strlen(control_js));
    } else if (strncmp(name, "/style.css", sizeof("/style.css")) == 0) {
