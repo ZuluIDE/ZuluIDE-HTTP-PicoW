@@ -243,6 +243,8 @@ void  ProcessServerAPIVersion(const uint8_t *message, size_t length) {
    }
 
    strcat(versionJson, "}");
+   // Clear unhandled request retries
+   EnqueueRequest(I2C_CLIENT_RESET_QUEUE);
    programState = State::WaitingForSSID;
 }
 
@@ -368,6 +370,8 @@ void ProcessSSID(const uint8_t *message, size_t length) {
       printf("No WIFI SSID retrieved from server and none compiled into the application.\n");
    }
 
+   // Clear retries
+   EnqueueRequest(I2C_CLIENT_RESET_QUEUE);
    programState = State::WaitingForPassword;
 }
 
@@ -384,6 +388,8 @@ void ProcessPassword(const uint8_t *message, size_t length) {
    }
    wifiPass = std::string((const char *)message);
    wifiPassSet = true;
+   // Clear retries
+   EnqueueRequest(I2C_CLIENT_RESET_QUEUE);
    programState = State::WaitingForConnect;
 }
 
@@ -687,7 +693,7 @@ int main() {
          case State::WaitingForSSID:
             if (programState != last_state || has_elapsed(waiting_start, I2C_CMD_RETRY_MS))
             {
-               printf("Waiting for SSDI\n");
+               printf("Waiting for SSID\n");
                if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID)) {
                      printf("Failed to add request for SSID to output queue\n");
                }

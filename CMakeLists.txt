@@ -45,6 +45,8 @@ pico_add_extra_outputs(zuluide_http_picow)
 
 target_compile_options(zuluide_http_picow PRIVATE -Wall)
 
+target_link_options(zuluide_http_picow PRIVATE "-Wl,--print-memory-usage")
+
 target_include_directories(zuluide_http_picow PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}/src
         )
