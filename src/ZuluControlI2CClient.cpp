@@ -173,6 +173,10 @@ bool EnqueueRequest(uint8_t request) {
 }
 
 bool EnqueueRequest(uint8_t request, const char* toSend) {
+   if (queue_is_full(&outputQueue))
+   {
+      EnqueueRequest(I2C_CLIENT_RESET_QUEUE);
+   }
    Packet* p = new Packet();
    p->command = request;
    p->length = strlen(toSend);
