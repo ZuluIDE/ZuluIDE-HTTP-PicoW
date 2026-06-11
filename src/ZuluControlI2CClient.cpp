@@ -169,7 +169,11 @@ bool EnqueueRequest(uint8_t request) {
    p->command = request;
    p->pos = 0;
    p->state = SendState::None;
-   return queue_try_add(&outputQueue, &p);
+   if (!queue_try_add(&outputQueue, &p)) {
+      delete p;
+      return false;
+   }
+   return true;
 }
 
 bool EnqueueRequest(uint8_t request, const char* toSend) {
@@ -185,7 +189,11 @@ bool EnqueueRequest(uint8_t request, const char* toSend) {
    p->pos = 0;
    p->state = SendState::None;
    memcpy(p->buffer, toSend, p->length);
-   return queue_try_add(&outputQueue, &p);
+   if (!queue_try_add(&outputQueue, &p)) {
+      delete p;
+      return false;
+   }
+   return true;
 }
 
 
