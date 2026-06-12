@@ -363,11 +363,12 @@ void ProcessSSID(const uint8_t *message, size_t length) {
    if (length > 0) {
       wifiSSID = std::string((const char *)message);
       printf("Using WIFI SSID (%s) from the server.\n", wifiSSID.c_str());
-   } else if (sizeof(WIFI_SSID) > 0) {
+   } else if (strlen(WIFI_SSID) > 0) {
       wifiSSID = std::string(WIFI_SSID);
       printf("Using WIFI SSID (%s) compiled into the application.\n", wifiSSID.c_str());
    } else {
       printf("No WIFI SSID retrieved from server and none compiled into the application.\n");
+      return;
    }
 
    // Clear retries
@@ -709,6 +710,7 @@ int main() {
                if (!zuluide::i2c::client::EnqueueRequest(I2C_CLIENT_FETCH_SSID_PASS)) {
                   printf("Failed to add request for Password to output queue\n");
                }
+               waiting_start = millis();
             }
             last_state = programState;
             zuluide::i2c::client::ProcessMessages();
@@ -716,14 +718,19 @@ int main() {
          }
          case State::WaitingForConnect:
          {
+            if (programState != last_state)
+               printf("Waiting for Connect\n");
             last_state = programState;
-            printf("Waiting for Connect\n");
             zuluide::i2c::client::ProcessMessages();
             break;
          }
 
          case State::WIFIInit: {
             last_state = programState;
+            if (wifiSSID.empty()) {
+               programState = State::WaitingForSSID;
+               break;
+            }
             printf("Initializing to WiFi.\n");
             started_blink = false;
             gpio_put(GPIO_MCU_LED, false);
@@ -755,13 +762,13 @@ int main() {
          case State::WIFIDown: {
             last_state = programState;
 
-            if (wifiSSID.empty() || sizeof(WIFI_SSID) == 0) {
+            if (wifiSSID.empty()) {
+               cyw43_arch_lwip_begin();
+               dhcp_stop(cyw43_state.netif);
+               cyw43_arch_lwip_end();
                reset();
                programState = State::WaitingForSSID;
             } else {
-               if (wifiSSID.empty() && sizeof(WIFI_SSID) > 0) {
-                  wifiSSID = WIFI_SSID;
-               }
                bool open_network = (wifiPassSet && wifiPass.empty()) || (!wifiPassSet && sizeof(WIFI_PASSWORD) == 0);
 
                if (open_network) {
